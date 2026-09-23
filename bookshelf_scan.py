@@ -15,6 +15,10 @@ CODE_KINDS = {
 	".sql": "sql",
 }
 
+# Everything the shelf can hold. The database keeps both libraries at once, so a re-walk of
+# the disk has to look for all of them: a file is only gone when it is gone for every mode.
+EVERY_KIND = {**KINDS, **CODE_KINDS}
+
 
 def scan(root, kinds):
 	"""Yield (path relative to root, title, kind) for every supported file under root.

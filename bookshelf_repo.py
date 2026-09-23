@@ -3,17 +3,23 @@
 This module does not import sqlite3 and never calls connect(). The caller owns
 the connection, and therefore owns the transaction boundary:
 
-	with contextlib.closing(db.connect(path)) as conn, conn:
+	with db.session(path) as conn:
 		root_id = repo.add_root(conn, "/Users/me/Desktop/NOTES")
 		repo.add_book(conn, root_id, "guides/vim.md", "vim-guide", "md")
 
 Both statements commit together or neither does.
+
+The one function here that reads the disk is sync_root, and it reads it through
+bookshelf_scan -- which stays the only place that decides which files count. It lives here
+rather than in a screen so that every front end gets the same re-walk.
 
 Books are addressed by `id`, not by path. The TUI has a row in hand after the
 user selects it; the importer has a path. Look the path up once, then use ids.
 """
 
 from pathlib import Path
+
+from bookshelf_scan import scan
 
 
 # --------------------------------------------------------------------- roots
@@ -131,6 +137,45 @@ def set_important(conn, book_id, flag):
 		"UPDATE books SET is_important = ? WHERE id = ?",
 		(1 if flag else 0, book_id),
 	).rowcount == 1
+
+
+# ---------------------------------------------------------------------- sync
+
+def sync_root(conn, root_id, kinds):
+	"""Bring one root in line with the disk. Returns (added, removed, folder_missing).
+
+	Files are not watched. The shelf is a snapshot, so a file added or deleted since the
+	last walk is invisible until something re-walks the root -- that is this.
+
+	A root whose folder is not there any more -- an unplugged drive, a folder that moved --
+	is reported, not emptied. Every file would look gone, and forgetting a whole library
+	because a volume is not mounted is not a mistake worth being able to make.
+
+	`kinds` is the union of every mode's map, not the current mode's: the table holds both
+	libraries, so a file is only gone when it is gone for all of them.
+	"""
+	root = get_root(conn, root_id)
+	if root is None or not Path(root["path"]).is_dir():
+		return 0, 0, True
+
+	found = list(scan(root["path"], kinds))
+	known = {
+		row["path"]: row["id"]
+		for row in conn.execute("SELECT id, path FROM books WHERE root_id = ?", (root_id,))
+	}
+	on_disk = {path for path, _, _ in found}
+
+	# Every file found is upserted, not just the ones that are new: add_book refreshes title
+	# and kind on conflict, so a file whose name or extension changed lands too. The star
+	# survives -- add_book touches neither is_important nor added_at.
+	for path, title, kind in found:
+		add_book(conn, root_id, path, title, kind)
+
+	for path, book_id in known.items():
+		if path not in on_disk:
+			remove_book(conn, book_id)
+
+	return len(on_disk - known.keys()), len(known.keys() - on_disk), False
 
 
 # ---------------------------------------------------------------------- list

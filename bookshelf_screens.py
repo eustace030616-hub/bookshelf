@@ -296,7 +296,16 @@ class MountScreen(PickerScreen):
 		)
 
 	def guard(self, path):
-		return dict(title="Mount this folder?", body=str(path), verb="mount", yes_key="m")
+		return dict(
+			title="Mount this folder?",
+			body=(
+				f"{path}\n\n"
+				"Every supported file under it is recorded -- .pdf .md .py .sql.\n"
+				"`t` switches which of those the list shows."
+			),
+			verb="mount",
+			yes_key="m",
+		)
 
 	def taken(self, path):
 		return path

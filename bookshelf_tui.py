@@ -6,6 +6,7 @@
 	m          mount a folder -- browse the disk, confirm, add it as a library
 	n          unmount a folder -- pick one, confirm, forget its books
 	t          book mode  <->  code mode
+	u          update -- re-walk the mounted folders and match the shelf to the disk
 	s          selected book: starred (important) on / off
 	f          show / hide the star
 	q          quit
@@ -18,7 +19,6 @@ The dialogs and trees are in bookshelf_screens, the rules for both are in README
 every colour and rule the app draws with is in bookshelf.tcss.
 
 Unmounting only forgets books. It never deletes a file from disk.
-
 Run:  bookshelf            (the command line)  or  python3 bookshelf_tui.py
 """
 import sys
@@ -38,7 +38,7 @@ from textual.widgets._markdown import MarkdownFence
 
 import bookshelf_db as db
 import bookshelf_repo as repo
-from bookshelf_scan import CODE_KINDS, KINDS, scan
+from bookshelf_scan import CODE_KINDS, EVERY_KIND, KINDS
 from bookshelf_screens import BookTree, MountScreen, Preview, UnmountScreen, find_node, force_line_rebuild
 from bookshelf_tree import children, plan
 
@@ -164,6 +164,11 @@ LANGUAGES = {
 # Where the `m` folder browser opens. Change to Path("/") to reach every volume.
 PICKER_ROOT = Path.home()
 
+# Re-walk every mounted folder when the app opens. Files are not watched, so the shelf is
+# only ever as fresh as its last walk; this is what makes the first thing you see true.
+# The walk runs in a worker either way, so turning it off costs freshness, never latency.
+SYNC_ON_START = True
+
 
 def open_path(path):
 	"""Hand the file to the OS default application.
@@ -211,6 +216,7 @@ class BookshelfApp(App):
 		Binding("i", "inspect", "inspect"),
 		Binding("m", "mount", "mount"),
 		Binding("n", "unmount", "unmount"),
+		Binding("u", "sync", "update"),
 		Binding("f", "toggle_stars", "star"),
 		Binding("s", "toggle_important", "starred"),
 		Binding("q", "quit", "quit"),
@@ -221,6 +227,7 @@ class BookshelfApp(App):
 		self.db_path = str(db_path)
 		self.mode = MODES["book"]
 		self.stars_on = False
+		self.syncing = False         # a walk is running; set and cleared on the UI thread
 		self.rows = []
 		self.selected_id = None        # survives across reloads
 
@@ -236,6 +243,8 @@ class BookshelfApp(App):
 		self.register_theme(THEME)
 		self.theme = THEME.name
 		self.reload()
+		if SYNC_ON_START:
+			self.start_sync()
 
 	def check_action(self, action, parameters):
 		# A dialog owns the keyboard. Without this, t/f/s/i would still act on the list
@@ -316,6 +325,51 @@ class BookshelfApp(App):
 		"""Replace the status line. Used while a mount is counting, before there are rows."""
 		self.query_one("#status", Static).update(text)
 
+	# ------------------------------------------------------------- update
+
+	def action_sync(self) -> None:
+		"""`u`: re-walk every mounted folder and match the shelf to the disk."""
+		self.start_sync(quiet=False)
+
+	def start_sync(self, quiet=True) -> None:
+		"""Walk every root in a worker. `quiet` is the startup walk: it says nothing unless
+		it found something, because a shelf that has not changed should not interrupt you."""
+		if self.syncing:
+			self.notify("already scanning the folders")
+			return
+		with db.session(self.db_path) as conn:
+			roots = len(repo.list_roots(conn))
+		if not roots:
+			if not quiet:
+				self.notify("nothing is mounted yet")
+			return
+		self.syncing = True
+		self.say(f"scanning {roots} mounted folder(s) ...")
+		self.walk_roots(quiet)
+
+	@work(thread=True)
+	def walk_roots(self, quiet) -> None:
+		"""The walk, off the UI thread: a root can be an entire home directory."""
+		added = removed = missing = 0
+		with db.session(self.db_path) as conn:
+			for root in repo.list_roots(conn):
+				a, r, gone = repo.sync_root(conn, root["id"], EVERY_KIND)
+				added, removed, missing = added + a, removed + r, missing + gone
+		self.call_from_thread(self.synced, added, removed, missing, quiet)
+
+	def synced(self, added, removed, missing, quiet) -> None:
+		"""Back on the UI thread: the table matches the disk, so redraw."""
+		self.syncing = False
+		self.reload()
+		if quiet and not (added or removed or missing):
+			return
+		change = [f"{added} new" if added else "", f"{removed} gone" if removed else ""]
+		note = ", ".join(part for part in change if part) or "no changes"
+		if missing:
+			self.notify(f"update: {note}  |  {missing} root(s) not on disk", severity="warning")
+		else:
+			self.notify(f"update: {note}")
+
 	# ------------------------------------------------------------- actions
 
 	def selected(self):
@@ -387,33 +441,35 @@ class BookshelfApp(App):
 
 		The walk is unbounded -- ~/ takes about 36 seconds -- so it cannot run on the UI
 		thread. The status line says a count is happening, and the tree is redrawn when the
-		count lands. `mode` is captured here: `t` may be pressed while the walk runs, and the
-		walk has to stay the one that was started.
+		count lands.
 		"""
 		if chosen is None:
 			return
-		mode = self.mode
-		self.say(f"counting {chosen} for {mode.extensions} ...")
-		self.index(chosen, mode)
+		self.say(f"counting {chosen} ...")
+		self.index(chosen)
 
 	@work(thread=True)
-	def index(self, chosen, mode) -> None:
-		"""Walk the folder and record it, in a thread. Reports back on the UI thread."""
-		found = list(scan(chosen, mode.kinds))
+	def index(self, chosen) -> None:
+		"""Walk the folder and record it, in a thread. Reports back on the UI thread.
+
+		This is the same call `u` makes, with the same map. A mounted folder contributes
+		every file the shelf can hold and `t` decides which of them you see, because the two
+		rules used to differ: mount indexed one mode's kinds, a re-walk found all of them, and
+		the first `u` after a mount changed the shelf by itself.
+		"""
 		with db.session(self.db_path) as conn:
 			try:
 				root_id = repo.add_root(conn, str(chosen))
 			except ValueError as error:
 				self.call_from_thread(self.notify, str(error), severity="error")
 				return
-			for path, title, kind in found:
-				repo.add_book(conn, root_id, path, title, kind)
-		self.call_from_thread(self.indexed, chosen, mode, len(found))
+			added, _, _ = repo.sync_root(conn, root_id, EVERY_KIND)
+		self.call_from_thread(self.indexed, chosen, added)
 
-	def indexed(self, chosen, mode, count) -> None:
+	def indexed(self, chosen, added) -> None:
 		"""Back on the UI thread: the folder is in the database, so redraw."""
 		self.reload()
-		self.notify(f"mounted {chosen.name} -- {count} {mode.plural}")
+		self.notify(f"mounted {chosen.name} -- {added} new file(s)")
 
 	def action_unmount(self) -> None:
 		"""Pick a mounted folder to forget. Only folders holding this mode's files are listed."""

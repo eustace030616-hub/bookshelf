@@ -30,6 +30,7 @@ The list is the main screen. Every key below acts on the highlighted row.
 | `m` | mount a folder — browse the disk and add it as a root |
 | `n` | unmount a folder — pick a root and forget it |
 | `t` | switch between book mode and code mode |
+| `u` | update — re-walk every mounted folder and match the shelf to the disk |
 | `f` | show or hide the star |
 | `s` | star the highlighted book, or unstar it |
 | `q` | quit |
@@ -38,13 +39,18 @@ The list is the main screen. Every key below acts on the highlighted row.
 
 ## Modes
 
-`t` switches the app between two modes, and the mode decides what `m` and `n`
-accept.
+`t` switches the app between two modes, and the mode decides what the list shows and
+what `n` is asked about.
 
-| Mode | Files `m` indexes | Shown in the tree |
-|---|---|---|
-| book (default) | `.pdf`, `.md` | only `pdf` and `md` rows |
-| code | `.py`, `.sql` | only `py` and `sql` rows |
+| Mode | Shown in the tree |
+|---|---|
+| book (default) | `pdf` and `md` rows |
+| code | `py` and `sql` rows |
+
+What a folder *contributes* does not depend on the mode. Mounting records every file the
+shelf can hold — `.pdf`, `.md`, `.py`, `.sql` — and `t` decides which of those you see.
+One rule for what a folder is worth, so mounting in one mode and updating in the other
+cannot disagree about what is on the shelf.
 
 One database holds both libraries and they never mix on screen: the tree, the counts,
 the unmount list and the status line only ever show the mode you are in. Switching
@@ -63,14 +69,13 @@ The mode is per process. The app starts in book mode every time.
 
 ## Roots
 
-A root is a folder the app watches, registered by absolute path. Any number of
+A root is a folder the app reads, registered by absolute path. Any number of
 roots can be mounted; each book stores its path relative to its root, so moving
 a folder means re-registering one root rather than rewriting every book.
 
-Mounting walks the folder and indexes every file under it, at any depth, that the
-current mode accepts: `.pdf` and `.md` in book mode, `.py` and `.sql` in code mode.
-The picker title names the mode and its extensions, so what `m` will take is visible
-before you press it.
+Mounting walks the folder and records every file the shelf can hold under it, at any
+depth — `.pdf`, `.md`, `.py`, `.sql` — whichever mode you are in. `t` is a view, not a
+filter on what gets recorded.
 
 | Key | In the folder picker |
 |---|---|
@@ -85,10 +90,10 @@ already a root is marked `[already mounted]`.
 `m` opens a guard naming the folder. `Escape` cancels; `Enter`, `y` and `m` accept.
 
 The walk happens after the guard, not before it: saying yes puts the folder in the
-database and the app indexes it on a worker thread, with
-`counting /path for .md .pdf ...` in the status line while it runs. Mounting is
-instant, the UI never blocks, and the tree fills in when the count lands. `~/` takes
-about 36 seconds, which is what the status line is for.
+database and the app indexes it on a worker thread, with `counting /path ...` in the
+status line while it runs. Mounting is instant, the UI never blocks, and the tree fills
+in when the count lands. `~/` takes about 36 seconds, which is what the status line is
+for.
 
 Two rules apply, and both live in `add_root`:
 
@@ -110,6 +115,34 @@ holds more of one than the other.
 
 **The files on disk are never touched.** Unmounting forgets; it does not delete.
 Mounting the folder again restores the books, without the star you had set.
+
+## Staying in sync
+
+Nothing watches the disk. The shelf is a snapshot of the last walk, so a file you add or
+delete outside the app is invisible until something walks the root again. Two things do:
+
+```
+│ on start   every mounted folder is re-walked, in a worker, as soon as the app opens.
+│            It scrolls nothing and says nothing unless it found something -- the tree
+│            you see is already corrected by the time you look at it
+│ `u`        the same walk, on demand. Always reports, including "update: no changes"
+```
+
+| What changed on disk | What `u` does |
+|---|---|
+| a file was added | a row is added, and title and kind are refreshed for every file |
+| a file was deleted | its row is removed, so `i` cannot offer to read a file that is gone |
+| a file was renamed | new path, new row; the old one goes |
+| the whole folder moved or the drive is unplugged | **nothing is removed.** The root is reported as not on disk, and its rows are kept |
+
+The last row is a deliberate refusal. Every file under a missing root looks deleted, and
+forgetting a library because an external disk is not mounted is not a mistake worth being
+able to make. `n` is how a root is forgotten.
+
+The walk covers every kind the shelf can hold, not the mode you are in: the table keeps
+both libraries, so a file is only gone when it is gone for all of them. That is why
+mounting records all four extensions too — one rule for what a folder is worth, and `t`
+only decides what you see.
 
 ## Star
 
@@ -230,18 +263,19 @@ books              one row per file: root_id, relative path, title, kind,
 
 ## How it is built
 
-Ten files and 1,269 lines, of which the TUI is two: the app and the screens. Each layer
+Ten files and 1,383 lines, of which the TUI is two: the app and the screens. Each layer
 knows only the one below it.
 
 ```
-bookshelf_tui.py        the app: modes, reload, keys            480 lines
+bookshelf_tui.py        the app: modes, reload, keys            536 lines
         │
-        ├── bookshelf_screens.py the dialogs and the trees      344
+        ├── bookshelf_screens.py the dialogs and the trees      353
         │
         ├── bookshelf_main.py    the `bookshelf` command          51
         │
-        ├── bookshelf_repo.py    the verbs, over a connection   166
-        ├── bookshelf_scan.py    which files count, one map      29
+        ├── bookshelf_repo.py    the verbs, over a connection,  211
+        │                        and the re-walk
+        ├── bookshelf_scan.py    which files count, one map      33
         │                        per mode
         ├── bookshelf_tree.py    the shape a tree view needs     48
         │
@@ -258,9 +292,11 @@ bookshelf_tui.py        the app: modes, reload, keys            480 lines
 │ repo holds no SQLite import   every function takes an open connection. The caller
 │                               owns the transaction, so two writes commit together
 │                               or neither does
-│ repo holds no policy          kinds and paths belong to scan -- one map per mode,
-│                               and the mode picks the map; resolution and nesting
-│                               belong to add_root
+│ repo holds no file policy     kinds and paths belong to scan -- one map per mode --
+│                               and resolution and nesting belong to add_root. The one
+│                               function in repo that reads the disk does it through
+│                               scan, and it lives there so every front end re-walks
+│                               the folders the same way
 │ one choke point               connect() is the only place a connection is built,
 │                               so row_factory and PRAGMA foreign_keys are set once
 │                               and cannot be missed
@@ -307,6 +343,9 @@ before the UI dependencies are installed.
 │ folders as notes     a folder holding images but no .md is not a book, so it does
 │                      not appear at all. notes/guides/how to make a good science
 │                      reaserch/ is one of these
+│ no watching          the shelf is a snapshot. It re-walks on start and on `u`, and it
+│                      does not watch the disk, so a change made while the app is open
+│                      shows up when you ask for it
 │ no index generation  the plan was a generated JSON summary per book, stored in a
 │                      table. Not built
 ```
