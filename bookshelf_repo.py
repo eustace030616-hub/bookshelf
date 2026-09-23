@@ -54,14 +54,10 @@ def get_root(conn, root_id):
 	return conn.execute("SELECT * FROM roots WHERE id = ?", (root_id,)).fetchone()
 
 
-def find_root(conn, path):
-	return conn.execute("SELECT * FROM roots WHERE path = ?", (str(path),)).fetchone()
-
-
 def list_roots(conn, kinds=None):
 	"""Every root with how many books it holds.
 
-	`kinds` narrows both the join and the count, so a root that holds only PDFs reports
+	`kinds` narrows both the join and the count, so a root that holds only Markdown reports
 	n = 0 while the shelf is in code mode. Pass None for every root, which is what the
 	nesting check in add_root needs: it must see all of them, not one mode's worth.
 	"""
@@ -113,18 +109,6 @@ BOOK_SELECT = """
 	SELECT b.*, r.path AS root_path, r.label AS root_label
 	  FROM books b JOIN roots r ON r.id = b.root_id
 """
-
-
-def get_book(conn, book_id):
-	"""One book, with its root joined on so you can build an absolute path."""
-	return conn.execute(BOOK_SELECT + " WHERE b.id = ?", (book_id,)).fetchone()
-
-
-def find_book(conn, root_id, path):
-	row = conn.execute(
-		"SELECT id FROM books WHERE root_id = ? AND path = ?", (root_id, path)
-	).fetchone()
-	return row["id"] if row else None
 
 
 def remove_book(conn, book_id):

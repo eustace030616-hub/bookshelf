@@ -22,4 +22,4 @@ MarkdownViewer { height: 1fr; }
 /* both pickers: the mount screen and the unmount screen */
 PickerScreen { background: $surface; }
 #picker-title { height: 1; background: $panel; color: $text-muted; padding: 0 1; }
-DirTree, RootTree { height: 1fr; }
+DirTree { height: 1fr; }

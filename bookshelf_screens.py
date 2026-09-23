@@ -59,12 +59,6 @@ class BookTree(Tree):
 	BINDINGS = VIM_KEYS
 
 
-class RootTree(Tree):
-	"""The list of mounted roots."""
-
-	BINDINGS = VIM_KEYS
-
-
 class DirTree(DirectoryTree):
 	"""The folder picker: folders only, dotfolders hidden."""
 
@@ -300,7 +294,7 @@ class MountScreen(PickerScreen):
 			title="Mount this folder?",
 			body=(
 				f"{path}\n\n"
-				"Every supported file under it is recorded -- .pdf .md .py .sql.\n"
+				"Every supported file under it is recorded -- .md .html .py .sql.\n"
 				"`t` switches which of those the list shows."
 			),
 			verb="mount",

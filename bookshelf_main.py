@@ -19,7 +19,7 @@ DB_FILE = Path(__file__).parent / "shelf.db"
 def build_parser():
 	parser = argparse.ArgumentParser(
 		prog="bookshelf",
-		description="a terminal bookshelf over folders of PDF, Markdown, Python and SQL.",
+		description="a terminal bookshelf over folders of HTML, Markdown, Python and SQL.",
 		epilog=(
 			"This is a TUI. Run `bookshelf` and the shelf opens:\n"
 			"\n"

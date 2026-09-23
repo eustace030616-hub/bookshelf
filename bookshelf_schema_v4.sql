@@ -1,0 +1,16 @@
+-- schema v4 — the shelf stops holding PDFs
+--
+-- Only the extensions in bookshelf_scan.KINDS are indexed, and .pdf is no longer one of
+-- them: a PDF arrives as the HTML it was converted into, so one document is one row
+-- instead of two. The rows that remain are unreachable -- nothing walks for a PDF any
+-- more, so the next re-walk would treat every one of them as a deleted file -- and they
+-- go now, in one auditable statement rather than as a side effect of a sync.
+--
+-- No table rebuild this time. The CHECK added in revision 3 already admits this set of
+-- kinds, and removing 'pdf' from it would have needed one; leaving it costs nothing, and
+-- it means putting PDFs back later is a one-line change in scan with no migration.
+--
+-- Rows are recoverable from the disk: the paths are still there, and re-adding .pdf to
+-- KINDS would index them again on the next `u`. What does not come back is the star and
+-- the added_at date.
+DELETE FROM books WHERE kind = 'pdf';

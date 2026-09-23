@@ -2,7 +2,7 @@
 
 	j / k      move down / up             (arrows work too)
 	Enter      open the file, or expand a folder
-	i          inspect -- Markdown and code render in-app, a PDF opens in Quick Look
+	i          inspect -- text, code and HTML render in-app; Enter opens it outside
 	m          mount a folder -- browse the disk, confirm, add it as a library
 	n          unmount a folder -- pick one, confirm, forget its books
 	t          book mode  <->  code mode
@@ -11,9 +11,11 @@
 	f          show / hide the star
 	q          quit
 
-`t` picks the mode, and the mode picks what `m` and `n` accept: `.pdf` and `.md` in book
-mode, `.py` and `.sql` in code mode. Both libraries share one database and never mix on
-screen -- the tree, the counts and the status line only ever show the mode you are in.
+`t` picks the mode, and the mode picks what the list shows: `.md` and `.html` in book mode,
+`.py` and `.sql` in code mode. A PDF is not indexed -- converting it to HTML is what puts a
+document on the shelf -- so one document is one row. Both libraries share one database and
+never mix on screen: the tree, the counts and the status line only ever show the mode you
+are in.
 
 The dialogs and trees are in bookshelf_screens, the rules for both are in README.md, and
 every colour and rule the app draws with is in bookshelf.tcss.
@@ -38,6 +40,7 @@ from textual.widgets._markdown import MarkdownFence
 
 import bookshelf_db as db
 import bookshelf_repo as repo
+from bookshelf_html import to_markdown
 from bookshelf_scan import CODE_KINDS, EVERY_KIND, KINDS
 from bookshelf_screens import BookTree, MountScreen, Preview, UnmountScreen, find_node, force_line_rebuild
 from bookshelf_tree import children, plan
@@ -177,19 +180,6 @@ def open_path(path):
 	For a terminal editor you would need to suspend the app first.
 	"""
 	subprocess.run(["open", str(path)], check=False)
-
-
-def quicklook(path):
-	"""Finder's space bar, from the command line: /usr/bin/qlmanage -p.
-
-	Launched, not waited on, and its output is discarded -- qlmanage writes progress text
-	to stdout that would otherwise land in the middle of the TUI.
-	"""
-	subprocess.Popen(
-		["qlmanage", "-p", str(path)],
-		stdout=subprocess.DEVNULL,
-		stderr=subprocess.DEVNULL,
-	)
 
 
 def fenced(code, language):
@@ -396,21 +386,25 @@ class BookshelfApp(App):
 		self.reload()
 
 	def action_inspect(self) -> None:
-		"""`i`: render text in the app, hand a PDF to Quick Look."""
+		"""`i`: render the file in the app.
+
+		Markdown and code are text, so they are drawn as they are. HTML is markup, and the app
+		has no layout engine and no stylesheet, so the reading structure is lifted out of it --
+		headings, lists, tables, fenced code -- and shown in the same viewer. `Enter` hands the
+		file to the browser when the design itself is what you want to see.
+		"""
 		row = self.selected()
 		if row is None:
 			return
 		path = Path(row["root_path"]) / row["path"]
-		if row["kind"] == "pdf":
-			# A terminal cannot render a PDF page, so use the thing that can.
-			quicklook(path)
-			return
 		try:
 			body = path.read_text(encoding="utf-8")
 		except (OSError, UnicodeDecodeError) as error:
 			self.notify(f"cannot read: {error}", severity="error")
 			return
-		if row["kind"] != "md":
+		if row["kind"] == "html":
+			body = to_markdown(body)
+		elif row["kind"] != "md":
 			# Code goes to the same viewer as Markdown, wrapped in one fence: inside a fence
 			# `#` stays a comment instead of becoming a heading, and the fence carries the
 			# language that colours it.

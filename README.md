@@ -1,7 +1,11 @@
 # bookshelf
 
-A terminal bookshelf over one or more folders of PDF and Markdown files — and, in
+A terminal bookshelf over one or more folders of HTML and Markdown files — and, in
 code mode, over Python and SQL.
+
+A PDF is not indexed. A PDF is the format a document arrives in, not the format the shelf
+reads: convert it to HTML first, and one document is one row instead of a row per
+representation.
 
 Nothing is moved, renamed or rewritten. A root is a folder the app watches; a
 book is one file inside it. The database holds the shelf — the star — and the files
@@ -26,7 +30,7 @@ The list is the main screen. Every key below acts on the highlighted row.
 |---|---|
 | `j` / `k` | move down and up. Arrow keys do the same |
 | `Enter` | open the file in the default application. On a folder, expand or collapse it |
-| `i` | inspect. Markdown and code render in the app; a PDF opens in Quick Look |
+| `i` | inspect in the app: Markdown as Markdown, code and HTML as what a terminal can draw |
 | `m` | mount a folder — browse the disk and add it as a root |
 | `n` | unmount a folder — pick a root and forget it |
 | `t` | switch between book mode and code mode |
@@ -44,11 +48,11 @@ what `n` is asked about.
 
 | Mode | Shown in the tree |
 |---|---|
-| book (default) | `pdf` and `md` rows |
+| book (default) | `md` and `html` rows |
 | code | `py` and `sql` rows |
 
 What a folder *contributes* does not depend on the mode. Mounting records every file the
-shelf can hold — `.pdf`, `.md`, `.py`, `.sql` — and `t` decides which of those you see.
+shelf can hold — `.md`, `.html`, `.py`, `.sql` — and `t` decides which of those you see.
 One rule for what a folder is worth, so mounting in one mode and updating in the other
 cannot disagree about what is on the shelf.
 
@@ -74,7 +78,7 @@ roots can be mounted; each book stores its path relative to its root, so moving
 a folder means re-registering one root rather than rewriting every book.
 
 Mounting walks the folder and records every file the shelf can hold under it, at any
-depth — `.pdf`, `.md`, `.py`, `.sql` — whichever mode you are in. `t` is a view, not a
+depth — `.md`, `.html`, `.py`, `.sql` — whichever mode you are in. `t` is a view, not a
 filter on what gets recorded.
 
 | Key | In the folder picker |
@@ -141,7 +145,7 @@ able to make. `n` is how a root is forgotten.
 
 The walk covers every kind the shelf can hold, not the mode you are in: the table keeps
 both libraries, so a file is only gone when it is gone for all of them. That is why
-mounting records all four extensions too — one rule for what a folder is worth, and `t`
+mounting records all five extensions too — one rule for what a folder is worth, and `t`
 only decides what you see.
 
 ## Star
@@ -166,8 +170,18 @@ scroll one. `Escape`, `q` or `i` closes it.
 The fence is sized to the file: one backtick more than the longest backtick run inside
 it, so a ``` in a Python docstring cannot end the block early.
 
-`i` on a PDF runs `qlmanage -p`, the same Quick Look that Finder's space bar
-opens, because a terminal cannot render a PDF page.
+`i` on an HTML file shows it in the app too. The markup is rewritten into Markdown first —
+headings, paragraphs, lists, tables, fenced code — and that is what the viewer draws. There
+is no layout engine and no stylesheet in a terminal, so what arrives is a document's
+structure, not its design. `Enter` opens the same file in the browser when the design is
+what you want to see; that is the only HTML renderer a cell grid can reach.
+
+The rewrite is `bookshelf_html.py`: the standard library's HTML parser, one pass, offline,
+nothing to install. It drops the stylesheet, the page furniture, anchors and image
+contents, and keeps the shape. A code block keeps the language it declares, so a
+`language-java` block is coloured exactly as a file of that language would be; a block that
+declares nothing becomes `text`, which draws monochrome rather than letting a lexer guess at
+a diagram.
 
 ### The code palette
 
@@ -247,7 +261,7 @@ books              one row per file: root_id, relative path, title, kind,
 
 | Column | Values |
 |---|---|
-| `kind` | `pdf`, `md`, `py`, `sql` |
+| `kind` | `md`, `html`, `py`, `sql` (`pdf` is reserved: revision 3 admits it, nothing writes it) |
 | `is_important` | `0` or `1` |
 
 ```
@@ -263,26 +277,29 @@ books              one row per file: root_id, relative path, title, kind,
 
 ## How it is built
 
-Ten files and 1,383 lines, of which the TUI is two: the app and the screens. Each layer
+Twelve files and 1,634 lines, of which the TUI is two: the app and the screens. Each layer
 knows only the one below it.
 
 ```
-bookshelf_tui.py        the app: modes, reload, keys            536 lines
+bookshelf_tui.py        the app: modes, reload, keys            530 lines
         │
-        ├── bookshelf_screens.py the dialogs and the trees      353
+        ├── bookshelf_screens.py the dialogs and the trees      347
+        ├── bookshelf_html.py    HTML read as Markdown           220
         │
         ├── bookshelf_main.py    the `bookshelf` command          51
         │
-        ├── bookshelf_repo.py    the verbs, over a connection,  211
+        ├── bookshelf_repo.py    the verbs, over a connection,  195
         │                        and the re-walk
-        ├── bookshelf_scan.py    which files count, one map      33
+        ├── bookshelf_scan.py    which files count, one map      38
         │                        per mode
         ├── bookshelf_tree.py    the shape a tree view needs     48
         │
-        └── bookshelf_db.py      one connection, one revision   54
+        └── bookshelf_db.py      one connection, one revision   56
                     │
         bookshelf_schema.sql     the contract, revision 1       33
-        bookshelf_schema_v2.sql  the code-mode kinds            39
+        bookshelf_schema_v2.sql  the code kinds                  39
+        bookshelf_schema_v3.sql  the html kind                   36
+        bookshelf_schema_v4.sql  end of the pdf rows             16
         bookshelf.tcss           every rule the app draws with  25
                     │
                  shelf.db
@@ -324,7 +341,7 @@ bookshelf -h                    what the app is and how to start it
 $ bookshelf -h
 usage: bookshelf [-h] [--db DB]
 
-a terminal bookshelf over folders of PDF, Markdown, Python and SQL.
+a terminal bookshelf over folders of HTML, Markdown, Python and SQL.
 
 This is a TUI. Run `bookshelf` and the shelf opens:
 

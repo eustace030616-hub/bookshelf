@@ -2,12 +2,17 @@
 
 One map per mode, and nothing else: adding a format is one line in one of these, and no
 other file changes. The TUI's mode table picks the map; the app passes it to scan().
+
+A PDF is not here on purpose. A PDF is the format a document arrives in, not the format
+the shelf reads: convert it to HTML first, and one document is one row instead of a row
+per representation. Adding ".pdf" back is this dictionary and nothing else -- the schema
+CHECK still admits the kind.
 """
 from pathlib import Path
 
 KINDS = {
-	".pdf": "pdf",
 	".md": "md",
+	".html": "html",
 }
 
 CODE_KINDS = {
