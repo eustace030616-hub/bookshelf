@@ -1,0 +1,9 @@
+# The shelf itself. Personal: real paths, real stars, and not the app's business to publish.
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+
+__pycache__/
+*.py[cod]
+.DS_Store

@@ -1,0 +1,25 @@
+/* bookshelf.tcss — every rule the app and its four screens use.
+ *
+ * One sheet, loaded by BookshelfApp.CSS_PATH. A screen's CSS is app CSS here: the same
+ * selectors have to work for a ModalScreen stacked over the list, and keeping them in one
+ * file is what lets the Python stay about behaviour.
+ */
+
+BookTree { height: 1fr; }
+#status { height: 1; background: $panel; color: $text-muted; padding: 0 1; }
+
+/* the yes/no guard */
+Confirm { align: center middle; background: $foreground 30%; }
+#confirm-box { width: 76; height: auto; border: thick $warning; background: $surface; padding: 1 2; }
+#confirm-title { text-style: bold; }
+#confirm-hint { color: $text-muted; margin-top: 1; }
+
+/* the text viewer */
+Preview { background: $surface; }
+#preview-title { height: 1; background: $panel; color: $text-muted; padding: 0 1; }
+MarkdownViewer { height: 1fr; }
+
+/* both pickers: the mount screen and the unmount screen */
+PickerScreen { background: $surface; }
+#picker-title { height: 1; background: $panel; color: $text-muted; padding: 0 1; }
+DirTree, RootTree { height: 1fr; }
