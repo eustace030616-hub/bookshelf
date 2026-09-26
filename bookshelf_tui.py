@@ -25,7 +25,6 @@ Run:  bookshelf            (the command line)  or  python3 bookshelf_tui.py
 """
 import sys
 import subprocess
-from dataclasses import dataclass
 from pathlib import Path
 
 from rich.text import Text
@@ -41,7 +40,7 @@ from textual.widgets._markdown import MarkdownFence
 import bookshelf_db as db
 import bookshelf_repo as repo
 from bookshelf_html import to_markdown
-from bookshelf_scan import CODE_KINDS, EVERY_KIND, KINDS
+from bookshelf_scan import EVERY_KIND, MODES, row_name
 from bookshelf_screens import BookTree, MountScreen, Preview, UnmountScreen, find_node, force_line_rebuild
 from bookshelf_tree import children, plan
 
@@ -64,30 +63,6 @@ THEME = Theme(
 	success="#5F7A2E",
 )
 
-
-@dataclass(frozen=True)
-class Mode:
-	"""One mode: its name, the extensions it indexes, and what a row in it is called."""
-
-	name: str
-	kinds: dict
-	noun: str
-
-	@property
-	def extensions(self):
-		"""The extensions it takes, for the status line and the picker title."""
-		return " ".join(sorted(self.kinds))
-
-	@property
-	def plural(self):
-		"""What several rows are called, for counts and confirmations."""
-		return self.noun + "s"
-
-
-MODES = {
-	"book": Mode("book", KINDS, "book"),
-	"code": Mode("code", CODE_KINDS, "code file"),
-}
 
 RING = "○"      # no
 FILL = "●"      # yes
@@ -241,14 +216,10 @@ class BookshelfApp(App):
 		# behind it, because App bindings stay live while a screen is stacked.
 		return len(self.screen_stack) == 1
 
-	def name_of(self, row):
-		"""One file as the current mode draws it: `schema.sql` in code mode, the stem in book
-		mode. A drawing rule only -- `books.title` holds the stem in both modes."""
-		return row["path"].rsplit("/", 1)[-1] if self.mode.name == "code" else row["title"]
 
 	def row_text(self, row):
 		"""One row as the list draws it, prefixed by the star sphere when `f` is on."""
-		name = self.name_of(row)
+		name = row_name(row, self.mode)
 		if not self.stars_on:
 			return Text(name)
 		on = bool(row["is_important"])
@@ -305,7 +276,7 @@ class BookshelfApp(App):
 
 	def update_status(self) -> None:
 		node = self.query_one("#books", BookTree).cursor_node
-		selected = self.name_of(node.data) if node and node.data else "-"
+		selected = row_name(node.data, self.mode) if node and node.data else "-"
 		self.say(
 			f"{len(self.rows)} {self.mode.plural}  |  mode: {self.mode.name} ({self.mode.extensions})"
 			f"  |  stars: {'on' if self.stars_on else 'off'}  |  {selected}"
@@ -340,21 +311,28 @@ class BookshelfApp(App):
 	@work(thread=True)
 	def walk_roots(self, quiet) -> None:
 		"""The walk, off the UI thread: a root can be an entire home directory."""
-		added = removed = missing = 0
+		added = removed = ingested = missing = 0
+		stored = 0
 		with db.session(self.db_path) as conn:
 			for root in repo.list_roots(conn):
-				a, r, gone = repo.sync_root(conn, root["id"], EVERY_KIND)
-				added, removed, missing = added + a, removed + r, missing + gone
-		self.call_from_thread(self.synced, added, removed, missing, quiet)
+				a, r, read, gone = repo.sync_root(conn, root["id"], EVERY_KIND)
+				added, removed, ingested, missing = added + a, removed + r, ingested + read, missing + gone
+			stored = repo.stored_totals(conn)[1]
+		self.call_from_thread(self.synced, added, removed, ingested, stored, missing, quiet)
 
-	def synced(self, added, removed, missing, quiet) -> None:
+	def synced(self, added, removed, ingested, stored, missing, quiet) -> None:
 		"""Back on the UI thread: the table matches the disk, so redraw."""
 		self.syncing = False
 		self.reload()
-		if quiet and not (added or removed or missing):
+		if quiet and not (added or removed or ingested or missing):
 			return
-		change = [f"{added} new" if added else "", f"{removed} gone" if removed else ""]
+		change = [
+			f"{added} new" if added else "",
+			f"{removed} gone" if removed else "",
+			f"{ingested} file(s) read" if ingested else "",
+		]
 		note = ", ".join(part for part in change if part) or "no changes"
+		note += f"  |  {stored / 1e6:.1f} MB stored" if stored else ""
 		if missing:
 			self.notify(f"update: {note}  |  {missing} root(s) not on disk", severity="warning")
 		else:
@@ -386,7 +364,12 @@ class BookshelfApp(App):
 		self.reload()
 
 	def action_inspect(self) -> None:
-		"""`i`: render the file in the app.
+		"""`i`: render the document, from the database.
+
+		The body comes from the content table -- the same bytes a server without the files will
+		read -- so the app and the phone render one source, not two. A row the walk has not
+		ingested yet (added before revision 5) is read from disk once and stored on the way
+		through, so the next `i` is a query and the next `u` costs nothing for it.
 
 		Markdown and code are text, so they are drawn as they are. HTML is markup, and the app
 		has no layout engine and no stylesheet, so the reading structure is lifted out of it --
@@ -396,11 +379,11 @@ class BookshelfApp(App):
 		row = self.selected()
 		if row is None:
 			return
-		path = Path(row["root_path"]) / row["path"]
-		try:
-			body = path.read_text(encoding="utf-8")
-		except (OSError, UnicodeDecodeError) as error:
-			self.notify(f"cannot read: {error}", severity="error")
+		with db.session(self.db_path) as conn:
+			body = repo.content_of(conn, row["id"])
+			if body is None:
+				body = self.read_and_store(conn, row)
+		if body is None:
 			return
 		if row["kind"] == "html":
 			body = to_markdown(body)
@@ -411,6 +394,14 @@ class BookshelfApp(App):
 			body = fenced(body, LANGUAGES.get(row["kind"], row["kind"]))
 		self.push_screen(Preview(f"{row['root_label']} / {row['path']}", body))
 
+	def read_and_store(self, conn, row):
+		"""Read one row's file and store it, for a row that predates the content table."""
+		path = Path(row["root_path"]) / row["path"]
+		if not repo.ingest(conn, row["id"], path):
+			self.notify(f"cannot read {row['path']} -- `u` will retry it", severity="error")
+			return None
+		return repo.content_of(conn, row["id"])
+
 	def action_toggle_important(self) -> None:
 		"""Toggle the star on the selected row."""
 		row = self.selected()
@@ -419,7 +410,7 @@ class BookshelfApp(App):
 		want = 0 if row["is_important"] else 1
 		with db.session(self.db_path) as conn:
 			repo.set_important(conn, row["id"], want)
-		self.notify(f"{self.name_of(row)} -> {'starred' if want else 'unstarred'}")
+		self.notify(f"{row_name(row, self.mode)} -> {'starred' if want else 'unstarred'}")
 		self.reload()
 
 	# ------------------------------------------------------- mount/unmount
@@ -457,13 +448,13 @@ class BookshelfApp(App):
 			except ValueError as error:
 				self.call_from_thread(self.notify, str(error), severity="error")
 				return
-			added, _, _ = repo.sync_root(conn, root_id, EVERY_KIND)
-		self.call_from_thread(self.indexed, chosen, added)
+			added, _, ingested, _ = repo.sync_root(conn, root_id, EVERY_KIND)
+		self.call_from_thread(self.indexed, chosen, added, ingested)
 
-	def indexed(self, chosen, added) -> None:
+	def indexed(self, chosen, added, ingested) -> None:
 		"""Back on the UI thread: the folder is in the database, so redraw."""
 		self.reload()
-		self.notify(f"mounted {chosen.name} -- {added} new file(s)")
+		self.notify(f"mounted {chosen.name} -- {added} new file(s), {ingested} read")
 
 	def action_unmount(self) -> None:
 		"""Pick a mounted folder to forget. Only folders holding this mode's files are listed."""

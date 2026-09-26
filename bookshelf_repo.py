@@ -9,12 +9,14 @@ the connection, and therefore owns the transaction boundary:
 
 Both statements commit together or neither does.
 
-The one function here that reads the disk is sync_root, and it reads it through
-bookshelf_scan -- which stays the only place that decides which files count. It lives here
-rather than in a screen so that every front end gets the same re-walk.
+Two functions here read the disk, and both go through bookshelf_scan -- which stays the only
+place that decides which files count. `sync_root` walks a root and reconciles the rows;
+`ingest` stores one file's text beside its row, which is what makes the shelf readable from
+a machine that does not have the files.
 
 Books are addressed by `id`, not by path. The TUI has a row in hand after the
-user selects it; the importer has a path. Look the path up once, then use ids.
+user selects it; a front end without the files has only the id. Look the path up
+once, then use ids.
 """
 
 from pathlib import Path
@@ -123,13 +125,67 @@ def set_important(conn, book_id, flag):
 	).rowcount == 1
 
 
+# ---------------------------------------------------------------------- ingest
+
+def ingest(conn, book_id, path):
+	"""Store one file's text beside its row, if the file changed since the last time.
+
+	Returns True when a body was written. Size and mtime decide: re-reading a whole library on
+	every `u` is the difference between 11 MB and 10 GB of I/O for an answer that has not
+	changed. A file that cannot be read as text -- gone, or not UTF-8 -- leaves whatever is
+	stored alone rather than emptying the row, so one unreadable file cannot blank a document.
+	"""
+	path = Path(path)
+	try:
+		stat = path.stat()
+		body = path.read_text(encoding="utf-8")
+	except (OSError, UnicodeDecodeError):
+		return False
+
+	known = conn.execute(
+		"SELECT source_size, source_mtime FROM content WHERE book_id = ?", (book_id,)
+	).fetchone()
+	if known and known["source_size"] == stat.st_size and known["source_mtime"] == str(stat.st_mtime):
+		return False
+
+	conn.execute(
+		"""
+		INSERT INTO content (book_id, body, bytes, source_size, source_mtime)
+		VALUES (?, ?, ?, ?, ?)
+		ON CONFLICT (book_id) DO UPDATE
+		   SET body = excluded.body,
+		       bytes = excluded.bytes,
+		       source_size = excluded.source_size,
+		       source_mtime = excluded.source_mtime,
+		       ingested_at = datetime('now')
+		""",
+		(book_id, body, len(body.encode("utf-8")), stat.st_size, str(stat.st_mtime)),
+	)
+	return True
+
+
+def content_of(conn, book_id):
+	"""The stored text of one document, or None if this row has no body yet."""
+	row = conn.execute("SELECT body FROM content WHERE book_id = ?", (book_id,)).fetchone()
+	return row["body"] if row else None
+
+
+def stored_totals(conn):
+	"""(documents, bytes) held in the database: what a front end without the files has."""
+	row = conn.execute("SELECT count(*), coalesce(sum(bytes), 0) FROM content").fetchone()
+	return row[0], row[1]
+
+
 # ---------------------------------------------------------------------- sync
 
 def sync_root(conn, root_id, kinds):
-	"""Bring one root in line with the disk. Returns (added, removed, folder_missing).
+	"""Bring one root in line with the disk.
 
-	Files are not watched. The shelf is a snapshot, so a file added or deleted since the
-	last walk is invisible until something re-walks the root -- that is this.
+	Returns (added, removed, ingested, folder_missing). Files are not watched. The shelf is a
+	snapshot, so a file added, changed or deleted since the last walk is invisible until
+	something re-walks the root -- that is this. `ingested` counts the files whose text was
+	read: the walk compares size and mtime, so an unchanged library costs one stat per file
+	and no reads at all.
 
 	A root whose folder is not there any more -- an unplugged drive, a folder that moved --
 	is reported, not emptied. Every file would look gone, and forgetting a whole library
@@ -140,7 +196,7 @@ def sync_root(conn, root_id, kinds):
 	"""
 	root = get_root(conn, root_id)
 	if root is None or not Path(root["path"]).is_dir():
-		return 0, 0, True
+		return 0, 0, 0, True
 
 	found = list(scan(root["path"], kinds))
 	known = {
@@ -152,14 +208,17 @@ def sync_root(conn, root_id, kinds):
 	# Every file found is upserted, not just the ones that are new: add_book refreshes title
 	# and kind on conflict, so a file whose name or extension changed lands too. The star
 	# survives -- add_book touches neither is_important nor added_at.
+	ingested = 0
 	for path, title, kind in found:
-		add_book(conn, root_id, path, title, kind)
+		book_id = add_book(conn, root_id, path, title, kind)
+		if ingest(conn, book_id, Path(root["path"]) / path):
+			ingested += 1
 
 	for path, book_id in known.items():
 		if path not in on_disk:
 			remove_book(conn, book_id)
 
-	return len(on_disk - known.keys()), len(known.keys() - on_disk), False
+	return len(on_disk - known.keys()), len(known.keys() - on_disk), ingested, False
 
 
 # ---------------------------------------------------------------------- list
@@ -175,8 +234,12 @@ ORDERINGS = {
 }
 
 
-def list_books(conn, root_id=None, important_only=False, order="id"):
-	"""All filters optional. Values are always bound; only literal clauses are concatenated."""
+def list_books(conn, root_id=None, important_only=False, order="id", kinds=None):
+	"""All filters optional. Values are always bound; only literal clauses are concatenated.
+
+	`kinds` is a mode's map values -- `mode.kinds.values()` -- so a front end can ask for one
+	mode's rows without holding a mode object.
+	"""
 	if order not in ORDERINGS:
 		raise ValueError(f"unknown order {order!r}; choose from {', '.join(ORDERINGS)}")
 
@@ -188,6 +251,10 @@ def list_books(conn, root_id=None, important_only=False, order="id"):
 		params.append(root_id)
 	if important_only:
 		where.append("b.is_important = 1")
+	if kinds is not None:
+		kinds = list(kinds)
+		where.append(f"b.kind IN ({', '.join('?' * len(kinds))})")
+		params.extend(kinds)
 
 	if where:
 		select.append("WHERE " + " AND ".join(where))

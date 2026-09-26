@@ -249,14 +249,17 @@ solved against the rendered result rather than against the tint itself.
 
 ## What it stores
 
-Two tables, defined in `bookshelf_schema.sql` and widened by
-`bookshelf_schema_v2.sql`.
+Three tables: `bookshelf_schema.sql` for the first two, then one script per revision —
+`v2` the code kinds, `v3` the html kind, `v4` the end of the pdf rows, `v5` the documents
+themselves.
 
 ```
 roots              one row per mounted folder. `path` is the only absolute path
                    in the schema
 books              one row per file: root_id, relative path, title, kind,
                    star, added_at
+content            one row per file that has been read: the text itself, its size,
+                   and the size and mtime of the file it came from
 ```
 
 | Column | Values |
@@ -269,38 +272,47 @@ books              one row per file: root_id, relative path, title, kind,
 │               may share a title; no two share a path
 │ derived       title comes from the filename and the tree view comes from the
 │               paths. Neither is stored
+│ content       the body is the file verbatim, in its own table so `SELECT b.*` on
+│               books stays cheap: one document is read at a time, and a vanished
+│               file takes its body with it (ON DELETE CASCADE)
+│ staleness     `source_size` and `source_mtime` are what make `u` cheap -- it reads
+│               only the files that changed. A row with no body yet is read from
+│               disk once by `i`, on the way through
 │ revision      PRAGMA user_version holds the schema revision. bootstrap() applies
 │               revision 1 to a fresh file and then migrates it like any other, so
 │               there is one path through the code. A released revision is never
-│               edited in place -- revision 2 is its own script
+│               edited in place -- each one is its own script
 ```
 
 ## How it is built
 
-Twelve files and 1,634 lines, of which the TUI is two: the app and the screens. Each layer
-knows only the one below it.
+Fifteen files and 2,185 lines. Two views of one data layer -- the terminal app and the
+web front end -- and nothing below them knows either exists.
 
 ```
-bookshelf_tui.py        the app: modes, reload, keys            530 lines
+bookshelf_tui.py        the app: modes, reload, keys            521 lines
         │
         ├── bookshelf_screens.py the dialogs and the trees      347
-        ├── bookshelf_html.py    HTML read as Markdown           220
         │
-        ├── bookshelf_main.py    the `bookshelf` command          51
+        ├── bookshelf_web.py     the shelf over HTTP, GET only  367
+        ├── bookshelf_html.py    HTML read as Markdown          220
+        ├── bookshelf_main.py    the `bookshelf` command        51
         │
-        ├── bookshelf_repo.py    the verbs, over a connection,  195
-        │                        and the re-walk
-        ├── bookshelf_scan.py    which files count, one map      38
-        │                        per mode
-        ├── bookshelf_tree.py    the shape a tree view needs     48
+        ├── bookshelf_repo.py    the verbs, the re-walk, the    262
+        │                        ingest
+        ├── bookshelf_scan.py    the kinds, the modes, how a    79
+        │                        row is named
+        ├── bookshelf_tree.py    the shape a tree view needs    48
         │
-        └── bookshelf_db.py      one connection, one revision   56
-                    │
+        └── bookshelf_db.py      connections and revisions,     71
+                    │            one of which cannot write
         bookshelf_schema.sql     the contract, revision 1       33
-        bookshelf_schema_v2.sql  the code kinds                  39
-        bookshelf_schema_v3.sql  the html kind                   36
-        bookshelf_schema_v4.sql  end of the pdf rows             16
+        bookshelf_schema_v2.sql  the code kinds                 39
+        bookshelf_schema_v3.sql  the html kind                  36
+        bookshelf_schema_v4.sql  end of the pdf rows            16
+        bookshelf_schema_v5.sql  the documents themselves       38
         bookshelf.tcss           every rule the app draws with  25
+        Dockerfile               the server, without a UI       32
                     │
                  shelf.db
 ```
@@ -353,6 +365,47 @@ The footer lists the keys for whatever has focus.
 
 `-h` prints that and exits; it never imports Textual, so it answers instantly even
 before the UI dependencies are installed.
+
+## Over HTTP
+
+The terminal app is for the machine with the folders. A phone needs something else, so the
+same data layer is served read-only by a second front end:
+
+```
+python3 bookshelf_web.py --db shelf.db                     # localhost:8080, the index
+python3 bookshelf_web.py --db shelf.db --token SECRET       # required off loopback
+```
+
+| Route | What it returns |
+|---|---|
+| `GET /` | the index, one mode at a time: `?mode=code` |
+| `GET /doc/<id>` | one document: HTML as it was stored, Markdown and code rendered here |
+| `GET /raw/<id>` | the stored text, exactly as it is |
+| `GET /health` | counts, bytes, and when the shelf was last walked |
+
+```
+│ read-only by construction   every route is a GET, the connection is `mode=ro` so SQLite
+│             itself refuses a write, and there is no POST anywhere. Mount, unmount, `u` and
+│             the star stay in the terminal app, on the machine with the files
+│ ids, not paths   a request names a row, never a file, so there is nothing to traverse
+│ no path traversal is not a policy here, it is the absence of a feature
+│ two renderings   a stored HTML document is served as the page it is -- its own design,
+│             its own fonts -- with a viewport tag added, because iOS otherwise lays a
+│             paper-shaped page out at 980px. Markdown and code are wrapped in this
+│             server's own page, using the app's palette
+│ when markdown-it is missing   the fallback renderer at the bottom of bookshelf_web.py
+│             covers headings, fences, lists, quotes and inline spans. A container with
+│             nothing installed loses polish, not the route
+│ the container proves the split   the image has no Textual in it, so the import would fail
+│             if the data layer had a UI dependency:
+│             docker build -t bookshelf-web .
+│             mkdir -p ~/shelf-sync && cp shelf.db ~/shelf-sync/
+│             docker run --rm -p 127.0.0.1:8080:8080 -e BOOKSHELF_TOKEN=dev \
+│               -v ~/shelf-sync:/data:ro bookshelf-web
+│ the copy, never the original   the DB is copied in and mounted `:ro`; the Mac stays the
+│             only writer, forever
+```
+
 
 ## What it does not do
 

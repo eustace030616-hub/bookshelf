@@ -1,13 +1,15 @@
-"""Which files count as books, and how to find them.
+"""Which files count as books, how to find them, and which mode shows what.
 
 One map per mode, and nothing else: adding a format is one line in one of these, and no
-other file changes. The TUI's mode table picks the map; the app passes it to scan().
+other file changes. The mode table lives here rather than in the app because the mode is not
+a screen idea -- the browser front end needs the same table, and it cannot import Textual.
 
 A PDF is not here on purpose. A PDF is the format a document arrives in, not the format
 the shelf reads: convert it to HTML first, and one document is one row instead of a row
 per representation. Adding ".pdf" back is this dictionary and nothing else -- the schema
 CHECK still admits the kind.
 """
+from dataclasses import dataclass
 from pathlib import Path
 
 KINDS = {
@@ -23,6 +25,45 @@ CODE_KINDS = {
 # Everything the shelf can hold. The database keeps both libraries at once, so a re-walk of
 # the disk has to look for all of them: a file is only gone when it is gone for every mode.
 EVERY_KIND = {**KINDS, **CODE_KINDS}
+
+
+@dataclass(frozen=True)
+class Mode:
+	"""One mode: its name, the extensions it indexes, and what a row in it is called."""
+
+	name: str
+	kinds: dict
+	noun: str
+
+	@property
+	def extensions(self):
+		"""The extensions it takes, for the status line and a view's title."""
+		return " ".join(sorted(self.kinds))
+
+	@property
+	def plural(self):
+		"""What several rows are called, for counts and confirmations."""
+		return self.noun + "s"
+
+
+MODES = {
+	"book": Mode("book", KINDS, "book"),
+	"code": Mode("code", CODE_KINDS, "code file"),
+}
+
+
+def row_name(row, mode):
+	"""One row as a name, the way a reader of that mode expects to see it.
+
+	Book mode shows the title, which is the filename without its extension: a shelf is a
+	reading list, and `docker-guide` reads better than `docker-guide.md`. Code mode shows the
+	filename as it is on disk, because there the extension is the information -- `schema.sql`
+	and `schema.py` are different files to a reader, not two names for one thing.
+
+	This is a drawing rule and nothing else: `books.title` holds the stem in both modes. It
+	lives here, next to the modes, because the terminal app and the browser have to agree.
+	"""
+	return Path(row["path"]).name if mode.name == "code" else row["title"]
 
 
 def scan(root, kinds):
