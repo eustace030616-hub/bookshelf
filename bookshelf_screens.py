@@ -151,6 +151,12 @@ class Preview(ModalScreen):
 		Binding("l", "cursor_right", "right", show=False),
 		Binding("j", "cursor_down", "down", show=False),
 		Binding("k", "cursor_up", "up", show=False),
+		Binding("w", "word_forward", "word", show=False),
+		Binding("b", "word_back", "back", show=False),
+		Binding("e", "word_end", "word end", show=False),
+		Binding("g", "prefix_g", "top", show=False),
+		Binding("G", "file_end", "end of file", show=False),
+		Binding("ctrl+g", "file_middle", "middle", show=False),
 		Binding("ctrl+d", "scroll_half_down", "half page", show=False),
 		Binding("ctrl+u", "scroll_half_up", "half page", show=False),
 		Binding("ctrl+f", "scroll_page_down", "page", show=False),
@@ -195,6 +201,7 @@ class Preview(ModalScreen):
 		self.stored = list(highlights)        # (position, span, anchor) rows from the database
 		self.document = None                  # built once the blocks have been laid out
 		self.selecting = False
+		self.pending_g = False               # `g` waits for its second key
 		self.anchor_offset = 0
 		self.cursor_offset = 0
 		self.highlights = []                  # what to draw: (start, span, anchor)
@@ -313,6 +320,7 @@ class Preview(ModalScreen):
 
 	def action_mark(self) -> None:
 		"""`m`: leave a mark here. One per document, and it expires when it is used."""
+		self.pending_g = False
 		anchor, position = self.anchor_at_top()
 		self.post_message(self.Marked(self.book_id, anchor, position))
 
@@ -332,6 +340,7 @@ class Preview(ModalScreen):
 		"""
 		if self.document is None:
 			return
+		self.pending_g = False
 		marked = self.covering(self.cursor_offset)
 		if not self.selecting and marked:
 			self.highlights.remove(marked)
@@ -358,6 +367,7 @@ class Preview(ModalScreen):
 
 	def move_cursor(self, offset) -> None:
 		"""Move the cursor, and take the view with it: the cursor is never off screen."""
+		self.pending_g = False
 		self.cursor_offset = offset
 		self.follow_cursor()
 		self.paint()
@@ -399,6 +409,7 @@ class Preview(ModalScreen):
 		The same key backs out of both, so a reader is never stuck holding a selection they
 		cannot put down without closing the document.
 		"""
+		self.pending_g = False
 		if self.selecting:
 			self.selecting = False
 			self.paint()
@@ -409,6 +420,46 @@ class Preview(ModalScreen):
 	# MarkdownViewer scrolls one row with the arrow keys; j/k jump PREVIEW_SCROLL rows -- or
 	# move the cursor a block at a time while a selection is open, which is what the same key
 	# means in the mode it is in.
+	def action_word_forward(self) -> None:
+		"""`w`: the next word. A word is a run of characters between spaces, so a filename and
+		a word are the same thing to a reader."""
+		if self.document:
+			self.move_cursor(self.document.move_w(self.cursor_offset))
+
+	def action_word_back(self) -> None:
+		"""`b`: the previous word."""
+		if self.document:
+			self.move_cursor(self.document.move_b(self.cursor_offset))
+
+	def action_word_end(self) -> None:
+		"""`e`: the end of this word, or of the next one from a space."""
+		if self.document:
+			self.move_cursor(self.document.move_e(self.cursor_offset))
+
+	def action_prefix_g(self) -> None:
+		"""`g`: the first half of `gg`. A second `g` goes to the top; anything else forgets it.
+
+		A two-key motion in a one-key reader needs a way out, and the way out here is any
+		other key: no timer, no mode to leave, nothing to notice.
+		"""
+		if not self.document:
+			return
+		if self.pending_g:
+			self.move_cursor(self.document.move_top())
+			return
+		self.pending_g = True
+		self.notify("g -- press g again for the top of the file")
+
+	def action_file_end(self) -> None:
+		"""`G`: the last block of the file."""
+		if self.document:
+			self.move_cursor(self.document.move_bottom())
+
+	def action_file_middle(self) -> None:
+		"""`ctrl-g`: the middle block, the way a reader means the middle."""
+		if self.document:
+			self.move_cursor(self.document.move_middle())
+
 	def action_cursor_down(self) -> None:
 		"""`j`: the cursor down a block; the view follows only as far as it must."""
 		if self.document:
@@ -421,6 +472,7 @@ class Preview(ModalScreen):
 
 	def scroll_view(self, rows) -> None:
 		"""Move the view, and bring the cursor back on screen if it fell off."""
+		self.pending_g = False
 		self.query_one(MarkdownViewer).scroll_relative(y=rows, animate=False)
 		self.clamp_cursor()
 

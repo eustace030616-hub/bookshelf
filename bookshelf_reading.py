@@ -186,6 +186,54 @@ class Document:
 		index = self.blocks.index(block)
 		return self.blocks[index + 1].start if index < len(self.blocks) - 1 else offset
 
+	def move_w(self, offset: int) -> int:
+		"""Forward to the first character of the next word.
+
+		A word is a run of characters between whitespace. Vim's second class -- punctuation as
+		its own word -- is the right rule for source code and the wrong one for a shelf of
+		prose, where it would walk through `docker-guide.md` one symbol at a time.
+		"""
+		text, size = self.text, len(self.text)
+		index = offset
+		while index < size and not text[index].isspace():
+			index += 1
+		while index < size and text[index].isspace():
+			index += 1
+		return min(index, size - 1) if size else offset
+
+	def move_b(self, offset: int) -> int:
+		"""Back to the first character of the previous word."""
+		text = self.text
+		index = offset
+		while index > 0 and text[index - 1].isspace():
+			index -= 1
+		while index > 0 and not text[index - 1].isspace():
+			index -= 1
+		return index
+
+	def move_e(self, offset: int) -> int:
+		"""Forward to the last character of this word, or of the next one from a space."""
+		text, size = self.text, len(self.text)
+		index = offset
+		while index < size and text[index].isspace():
+			index += 1
+		while index < size and not text[index].isspace():
+			index += 1
+		return min(max(index - 1, 0), size - 1) if size else offset
+
+	def move_top(self, offset: int = 0) -> int:
+		"""The first character of the document."""
+		return 0
+
+	def move_bottom(self, offset: int = 0) -> int:
+		"""The start of the last block: the end of the file, where there is still something to
+		read. The last character of it would put the reader in the middle of a word."""
+		return self.blocks[-1].start if self.blocks else 0
+
+	def move_middle(self, offset: int = 0) -> int:
+		"""The start of the middle block, which is what a reader means by the middle."""
+		return self.blocks[len(self.blocks) // 2].start if self.blocks else 0
+
 	def move_k(self, offset: int) -> int:
 		"""Up a block, keeping the column, as vim keeps it."""
 		block = self.block_at(offset)

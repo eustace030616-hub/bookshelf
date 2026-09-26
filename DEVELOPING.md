@@ -5,15 +5,15 @@ How the shelf is built, and why. What it does, and which key does what, is in
 
 ## Layout
 
-Nineteen files and 3,044 lines. Two views of one data layer -- the terminal app and the
+Nineteen files and 3,144 lines. Two views of one data layer -- the terminal app and the
 web front end -- and nothing below them knows either exists.
 
 ```
 bookshelf_tui.py         the app: modes, reload, keys          534
         │
-        ├── bookshelf_screens.py     the dialogs and the trees             642
+        ├── bookshelf_screens.py     the dialogs and the trees             694
         ├── bookshelf_web.py         the shelf over HTTP, GET only         511
-        ├── bookshelf_reading.py     the document as a model, and the      236
+        ├── bookshelf_reading.py     the document as a model, and the      284
         │                            cursor over it
         ├── bookshelf_html.py        HTML read as Markdown                 220
         ├── bookshelf_main.py        the `bookshelf` command               51
@@ -75,6 +75,10 @@ bookshelf_tui.py         the app: modes, reload, keys          534
 │                               keypress before the app does anything. Two levers, if it comes
 │                               to it: draw the cursor as a selection rather than rewriting
 │                               content, or page the document so one section is mounted
+│ the motions are arithmetic   every movement -- a character, a block, a word, the top, the
+│                               middle, the end -- is a function over one string in
+│                               bookshelf_reading, and the screen only binds keys to them. None
+│                               of them need Textual, and all of them are tested without an app
 │ the reading model is separate   a rendered document is a tree of widgets, and a tree is a
 │                               poor place to keep a position. bookshelf_reading reads it once
 │                               into blocks, pieces and one string, so every position after
