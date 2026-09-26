@@ -195,8 +195,8 @@ class Preview(ModalScreen):
 		Binding("q", "close_preview", "close"),
 		Binding("m", "mark", "mark"),
 		Binding("a", "select", "select"),
-		Binding("n", "note", "note"),
-		Binding("N", "next_note", "notes", show=False),
+		Binding("N", "note", "note"),
+		Binding("n", "next_note", "notes"),
 		Binding("h", "cursor_left", "left", show=False),
 		Binding("l", "cursor_right", "right", show=False),
 		Binding("j", "cursor_down", "down", show=False),
@@ -220,6 +220,14 @@ class Preview(ModalScreen):
 			super().__init__()
 			self.book_id = book_id
 			self.anchor = anchor
+			self.position = position
+
+	class NoteRemoved(Message):
+		"""The note on a line was deleted, after the guard said yes."""
+
+		def __init__(self, book_id, position):
+			super().__init__()
+			self.book_id = book_id
 			self.position = position
 
 	class NoteSaved(Message):
@@ -266,14 +274,15 @@ class Preview(ModalScreen):
 		self.cursor_offset = 0
 		self.highlights = []                  # what to draw: (start, span, anchor)
 		self.notes = []                       # where the notes are: (position, anchor, note)
-		self.note_widget = None               # the one note on screen, if any
 
 	def compose(self) -> ComposeResult:
 		yield Static(self.heading, id="preview-title")
 		yield MarkdownViewer(self.body, show_table_of_contents=False)
+		yield Static("", id="note-strip")
 		yield Footer()
 
 	def on_mount(self) -> None:
+		self.query_one("#note-strip").display = False
 		self.query_one(MarkdownViewer).focus()
 		# Not here: a screen's on_mount runs before its children have built, so neither the
 		# document nor the block a jump needs exists yet. Wait for them.
@@ -350,34 +359,21 @@ class Preview(ModalScreen):
 	def show_note(self):
 		"""One note on screen at a time: the one on the cursor's line, or none.
 
-		The note is a widget of its own, moved above its line rather than text written into the
-		line: writing it in would move every character offset in the model, and the cursor with
-		it.
+		The strip is a widget of the preview, not of the document, and it docks in a layer of
+		its own. So showing it moves nothing: the text keeps its height, its scroll position
+		and its line count, and the note lies over the page the way a window does. A note
+		mounted into the document would take a row out of it and shift every line below.
 
-		There is one such widget for the whole document, created the first time a note is shown
-		and then moved and hidden -- never removed and re-created, because a removal is not
-		finished when the next mount begins and Textual refuses two widgets with one id. While
-		no note is due it is display:none, so it takes no room and no part in the document: the
-		model skips it either way, since it is not a Markdown block.
+		The text is never written into its line either: that would move every character offset
+		in the model, and the cursor with them.
 		"""
-		markdown = next(iter(self.query("Markdown")), None)
-		if markdown is None:
-			return
+		strip = self.query_one("#note-strip", Static)
 		here = self.note_here()
-		if self.note_widget is None:
-			if here is None:
-				return                     # nothing due, and nothing ever shown
-			self.note_widget = Static("", id="preview-note")
-			markdown.mount(self.note_widget)
-		widget = self.note_widget
 		if here is None:
-			widget.display = False
+			strip.display = False
 			return
-		block = self.document.block_at(here[0])
-		widget.update(f"note · {here[2]}")
-		widget.display = True
-		if block is not None:
-			self.query_one("Markdown").move_child(widget, before=block.widget)
+		strip.update(f"note · {here[2]}")
+		strip.display = True
 
 	def paint(self):
 		"""Draw the document with the cursor and the selection it currently has."""
@@ -451,12 +447,39 @@ class Preview(ModalScreen):
 		return None
 
 	def action_note(self) -> None:
-		"""`n`: write a note on this line, or edit the one already on it."""
+		"""`N`: write a note on this line, or take the one on it away.
+
+		One key for the whole life of a note, because a reader on a line is either saying
+		something or taking it back. Deleting asks first: a note is the only thing here they
+		wrote themselves, and it is not recoverable from any file.
+		"""
 		if self.document is None or not self.document.blocks:
 			return
 		self.pending_g = False
 		existing = self.note_here()
-		self.app.push_screen(NotePrompt(existing[2] if existing else ""), self.note_written)
+		if existing is None:
+			self.app.push_screen(NotePrompt(""), self.note_written)
+			return
+
+		def answered(confirmed):
+			if confirmed:
+				self.note_deleted(existing)
+
+		self.app.push_screen(
+			Confirm(
+				"Delete this note?",
+				f"{existing[2]}\n\nThe document itself is not touched.",
+				verb="delete",
+				yes_key="N",
+			),
+			answered,
+		)
+
+	def note_deleted(self, note) -> None:
+		"""The reader confirmed: the note goes, here and in the database."""
+		self.notes = [row for row in self.notes if row != tuple(note)]
+		self.show_note()
+		self.post_message(self.NoteRemoved(self.book_id, note[0]))
 
 	def note_written(self, text) -> None:
 		"""The composer closed: a note, or nothing when it was left empty."""

@@ -5,20 +5,20 @@ How the shelf is built, and why. What it does, and which key does what, is in
 
 ## Layout
 
-Nineteen files and 3,323 lines. Two views of one data layer -- the terminal app and the
+Nineteen files and 3,361 lines. Two views of one data layer -- the terminal app and the
 web front end -- and nothing below them knows either exists.
 
 ```
-bookshelf_tui.py         the app: modes, reload, keys          542
+bookshelf_tui.py         the app: modes, reload, keys          548
         │
-        ├── bookshelf_screens.py     the dialogs and the trees             838
+        ├── bookshelf_screens.py     the dialogs and the trees             861
         ├── bookshelf_web.py         the shelf over HTTP, GET only         511
-        ├── bookshelf_reading.py     the document as a model, and the      277
+        ├── bookshelf_reading.py     the document as a model, and the      274
         │                            cursor over it
         ├── bookshelf_html.py        HTML read as Markdown                 220
         ├── bookshelf_main.py        the `bookshelf` command               51
         │
-        ├── bookshelf_repo.py        the verbs, the re-walk, the           360
+        ├── bookshelf_repo.py        the verbs, the re-walk, the           368
         │                            ingest
         ├── bookshelf_scan.py        the kinds, the modes, how a           95
         │                            row is named
@@ -34,7 +34,7 @@ bookshelf_tui.py         the app: modes, reload, keys          542
         bookshelf_schema_v5.sql  the documents themselves              38
         bookshelf_schema_v6.sql  a reader's annotations                38
         bookshelf_schema_v7.sql  a marked range is a highlight         39
-        bookshelf.tcss           every rule the app draws with         30
+        bookshelf.tcss           every rule the app draws with         34
         Dockerfile               the server, without a UI              39
                     │
                  shelf.db
@@ -63,14 +63,13 @@ bookshelf_tui.py         the app: modes, reload, keys          542
 │                               combining it with the parsed styles a code fence already carries
 │                               raises `Color + str` deep inside the renderer. Pass Color.parse
 │                               and the style is fully parsed, which is what the highlight does
-│ a note is a widget, not text   writing a note into its line would move every character
-│                               offset in the model, and the cursor with it. So the note is one
-│                               `Static` for the whole document, moved above the line the
-│                               cursor is on and left display:none otherwise -- moved and
-│                               hidden rather than removed and re-created, because a removal is
-│                               not finished when the next mount begins and Textual refuses two
-│                               widgets with one id. The model skips it either way: it is not a
-│                               Markdown block
+│ the note is a layer, not a line   the strip belongs to the preview screen and docks in a CSS
+│                               layer of its own, so showing it costs nothing: measured with it
+│                               hidden and shown, the viewer keeps its height, its scroll and
+│                               its content size to the row. A note mounted into the document
+│                               would take a row out of the page and shift everything below;
+│                               writing the text into its line would move every character
+│                               offset in the model, and the cursor with them
 │ the composer saves on Enter   and leaves on Escape, not `q`: a text field belongs to its
 │                               text, and a note beginning with "q" is unwritable if that
 │                               letter also means leave. Measured, not assumed -- the first

@@ -281,6 +281,14 @@ def set_note(conn, book_id, position, anchor, note):
 	)
 
 
+def remove_note(conn, book_id, position):
+	"""Forget the note on one line. Returns True if one was there."""
+	return conn.execute(
+		"DELETE FROM annotation WHERE book_id = ? AND kind = 'note' AND position = ?",
+		(book_id, position),
+	).rowcount == 1
+
+
 def notes_for(conn, book_id):
 	"""Every note on one document, in reading order: (position, anchor, note)."""
 	return [

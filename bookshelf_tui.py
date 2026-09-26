@@ -410,6 +410,12 @@ class BookshelfApp(App):
 			repo.set_note(conn, message.book_id, message.position, message.anchor, message.note)
 		self.notify(f"note: {message.note[:40]}")
 
+	def on_preview_note_removed(self, message: Preview.NoteRemoved) -> None:
+		"""The reader deleted a note, after the guard."""
+		with db.session(self.db_path) as conn:
+			repo.remove_note(conn, message.book_id, message.position)
+		self.notify("note deleted")
+
 	def on_preview_highlight_removed(self, message: Preview.HighlightRemoved) -> None:
 		"""The reader pressed `a` inside a marked range: that range goes."""
 		with db.session(self.db_path) as conn:

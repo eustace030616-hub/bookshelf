@@ -20,7 +20,6 @@ from typing import Any
 from textual.color import Color
 from textual.content import Content
 from textual.style import Style
-from textual.widgets._markdown import MarkdownBlock
 
 # The character under the cursor, and the range a reader has selected. Both are styles rather
 # than widgets: a span is what a `Content` can carry, and the app already draws everything else
@@ -99,8 +98,6 @@ class Document:
 		self.blocks: list[Block] = []
 		self.text = ""
 		for child in markdown.children:
-			if not isinstance(child, MarkdownBlock):
-				continue          # a note drawn above a line is a child of the container too
 			pieces = []
 			for node in child.walk_children(with_self=True):
 				content = getattr(node, "content", None)

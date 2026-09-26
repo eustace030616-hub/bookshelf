@@ -45,7 +45,7 @@ unmount -- so one line of hint names every key that works.
 
 The preview answers to its own keys: `j`/`k`, `h`/`l`, `w`/`b`, `gg`/`G` and `ctrl-g`
 move the cursor, `ctrl-d`/`ctrl-u` and `ctrl-f`/`ctrl-b` move the view, `m` marks a place,
-`a` marks a range, `n` writes a note and `N` finds them, `q` closes. `m` there
+`a` marks a range, `N` writes a note and `n` finds them, `q` closes. `m` there
 is a mark, not a mount -- below the list, a key means what the screen needs it to mean.
 
 ## Modes
@@ -201,10 +201,15 @@ screen.
 already made takes that mark away. `q` drops a selection you have changed your mind about, and
 only closes the document when there is none.
 
-`n` writes a note on the line the cursor is on. The note is invisible until the cursor is on
-that line, and then it appears above it as a strip; move the cursor away and it is gone. There
-is one note per line -- `n` on a noted line edits it -- and `N` jumps to the next line that has
-one, wrapping round at the end of the file, which is how you find notes you wrote months ago.
+`N` writes a note on the line the cursor is on, and `n` jumps to the next line that has one,
+wrapping round at the end of the file -- which is how you find notes you wrote months ago. One
+note per line: `N` on a noted line offers to delete it, and asks first.
+
+The note is a strip along the bottom, and it is only there while the cursor is on its line.
+It lies in a layer of its own, over the document rather than in it, so showing and hiding it
+moves nothing: the page keeps its height, its scroll position and its line breaks, and the text
+you are reading does not jump. A note written into its line would take a row out of the page and
+shift every line below it.
 
 The composer saves with `Enter` and leaves with `Escape` (or `ctrl-q`, which discards what you
 have typed). `Enter` on an empty line leaves nothing behind. It is not a `q` to leave, because

@@ -18,8 +18,12 @@ Confirm { align: center middle; background: $foreground 30%; }
 Preview { background: $surface; }
 #preview-title { height: 1; background: $panel; color: $text-muted; padding: 0 1; }
 MarkdownViewer { height: 1fr; }
-/* the one note on screen: a strip above the line the cursor is on */
-#preview-note { height: auto; padding: 0 1; margin: 0 0 1 0; background: $panel; color: $text-warning; }
+/* the note on the cursor's line: a strip in a layer of its own, so it lies over the document
+   instead of taking a row out of it. Shown and hidden on a layer, the text below does not
+   move at all -- which is what makes it feel like a window rather than a paragraph */
+Preview { layers: base note; }
+#note-strip { layer: note; dock: bottom; width: 1fr; height: auto; max-height: 5;
+              background: $panel; color: $text-warning; padding: 0 1; border-top: solid $warning; }
 #note-box { width: 76; height: auto; border: thick $warning; background: $surface; padding: 1 2; }
 #note-title { text-style: bold; color: $text-warning; }
 #note-hint { color: $text-muted; margin-top: 1; }
