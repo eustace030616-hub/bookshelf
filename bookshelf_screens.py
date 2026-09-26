@@ -21,7 +21,7 @@ from textual.containers import Vertical
 from bookshelf_reading import Document
 from textual.message import Message
 from textual.screen import ModalScreen
-from textual.widgets import DirectoryTree, Footer, Input, MarkdownViewer, Static, Tree
+from textual.widgets import DirectoryTree, Footer, Input, MarkdownViewer, Static, TextArea, Tree
 
 # Rows a j/k press moves the preview. The arrow keys still move one row.
 PREVIEW_SCROLL = 5
@@ -128,52 +128,136 @@ class Confirm(ModalScreen):
 			self.dismiss(None)
 
 
-class NoteInput(Input):
-	"""The line a note is typed on. `ctrl+q` throws it away without clearing it first."""
+class NoteInput(TextArea):
+	"""The box a note is typed in.
+
+	`Enter` hands the note back, `shift+enter` starts the next line carrying the indentation
+	of the line it came from, and `ctrl+q` throws the note away. A `TextArea` rather than an
+	`Input`, because a note may run to more than one line -- and in an `Input` a tab is the
+	focus key, so there is no way to indent one.
+	"""
 
 	BINDINGS = [Binding("ctrl+q", "discard", "discard", show=False)]
+
+	async def _on_key(self, event: events.Key) -> None:
+		"""`Enter` leaves the field: `TextArea` would otherwise take it as a newline."""
+		if event.key == "enter":
+			event.stop()
+			event.prevent_default()
+			self.screen.save_note()
+			return
+		if event.key == "shift+enter":
+			event.stop()
+			event.prevent_default()
+			self.indent_line()
+			return
+		if event.key == "tab":
+			# Not the focus key here: the modal holds one text box, and `Escape` is the way
+			# out, so `tab` is free to indent the way it does in any editor.
+			event.stop()
+			event.prevent_default()
+			if self.indent_type == "tabs":
+				self.insert("\t")
+			else:
+				self.insert(" " * self._find_columns_to_next_tab_stop())
+			return
+		await super()._on_key(event)
+
+	def indent_line(self) -> None:
+		"""Start a new line at the indentation of the line the cursor is on."""
+		row, _ = self.cursor_location
+		line = self.document.get_line(row)
+		indent = line[: len(line) - len(line.lstrip())]
+		self.insert("\n" + indent)
 
 	def action_discard(self) -> None:
 		self.screen.dismiss(None)
 
 
 class NotePrompt(ModalScreen):
-	"""Write a note on the line the cursor is on. `Enter` saves it, `Escape` leaves.
+	"""Write a note on the line the cursor is on.
+
+	`Enter` saves it, `shift+enter` starts an indented line, `Escape` leaves.
 
 	`q` is not the way out here, and cannot be: this is a text field, so the alphabet belongs
 	to the note. A note that begins with "q" is a note somebody will write -- measured, the
 	first attempt came back empty -- and a field where one letter both types and leaves is a
-	field that eats the letter. `Escape` types nothing, `Enter` saves, and `ctrl+q` discards
+	field that eats the letter. `Escape` types nothing, `Enter` saves, `ctrl+q` discards
 	what is already typed without clearing it first.
 	"""
 
 	BINDINGS = [Binding("escape", "discard", "discard", show=False)]
 
-	def __init__(self, text=""):
+	def __init__(self, text="", title="note on this line"):
 		super().__init__()
 		self.text = text
+		self.title = title
 
 	def compose(self) -> ComposeResult:
 		with Vertical(id="note-box"):
-			yield Static("note on this line", id="note-title")
-			yield NoteInput(value=self.text, id="note-input")
-			# Static parses its content as Rich markup, so the key names are escaped here
-			# Static parses its content as Rich markup, so [enter] would be read as a style tag
-			# and vanish. Escaping the bracket is what makes the key names visible.
+			yield Static(self.title, id="note-title")
+			yield NoteInput(self.text, id="note-input")
+			# Static parses its content as Rich markup, so the key names are escaped here:
+			# [enter] would be read as a style tag and vanish. Escaping the bracket is what
+			# makes the key names visible.
 			yield Static(
-				"[enter] save    [esc] leave    [ctrl+q] discard".replace("[", r"\["),
+				"[enter] save    [tab] indent    [shift+enter] new line    "
+				"[esc] leave    [ctrl+q] discard".replace("[", r"\["),
 				id="note-hint",
 			)
 
 	def on_mount(self) -> None:
 		self.query_one(NoteInput).focus()
 
-	def on_input_submitted(self, event: Input.Submitted) -> None:
-		"""Enter: the note, or nothing at all when the line is empty."""
-		self.dismiss(event.value.strip() or None)
+	def save_note(self) -> None:
+		"""`Enter`: the note, or nothing at all when it is empty.
+
+		Only the trailing whitespace goes: the indent at the front of a line is the note.
+		"""
+		text = self.query_one(NoteInput).text
+		self.dismiss(text.rstrip() or None)
 
 	def action_discard(self) -> None:
 		self.dismiss(None)
+
+
+class SearchInput(Input):
+	"""The `/` bar: one line, searched as it is typed, `Enter` keeps it, `Escape` drops it.
+
+	`Escape` is the way out for the same reason it is in the note composer: the alphabet
+	belongs to the pattern, and a letter that both types and leaves is a letter the field eats.
+	"""
+
+	BINDINGS = [Binding("escape", "cancel", "cancel", show=False)]
+
+	async def _on_key(self, event: events.Key) -> None:
+		"""`<` and `>` step the matches instead of typing themselves.
+
+		A reader looking at the hits wants to walk them without leaving the pattern, and those
+		two characters are not worth a pattern of their own in prose.
+		"""
+		if event.key in ("less_than_sign", "greater_than_sign"):
+			event.stop()
+			event.prevent_default()
+			self.screen.step_search(1 if event.key == "greater_than_sign" else -1)
+			return
+		await super()._on_key(event)
+
+	def action_cancel(self) -> None:
+		self.screen.cancel_search()
+
+
+class NoteStrip(Static):
+	"""The strip that carries the note on the cursor's line.
+
+	It places itself whenever its own height changes. A strip that has just been shown has no
+	height until the layout runs, and the row above its line depends on that height -- so the
+	resize, not the show, is what puts it in the right place.
+	"""
+
+	def on_resize(self, event) -> None:
+		if isinstance(self.screen, Preview):
+			self.screen.place_note_strip()
 
 
 class Preview(ModalScreen):
@@ -196,11 +280,17 @@ class Preview(ModalScreen):
 		Binding("m", "mark", "mark"),
 		Binding("a", "select", "select"),
 		Binding("N", "note", "note"),
+		Binding("C", "edit_note", "edit note"),
 		Binding("n", "next_note", "notes"),
+		Binding("/", "search", "search"),
+		Binding("less_than_sign", "search_back", "prev match", show=False),
+		Binding("greater_than_sign", "search_forward", "next match", show=False),
 		Binding("h", "cursor_left", "left", show=False),
 		Binding("l", "cursor_right", "right", show=False),
 		Binding("j", "cursor_down", "down", show=False),
 		Binding("k", "cursor_up", "up", show=False),
+		Binding("J", "line_down", "line down", show=False),
+		Binding("K", "line_up", "line up", show=False),
 		Binding("w", "word_forward", "word", show=False),
 		Binding("b", "word_back", "back", show=False),
 		Binding("g", "prefix_g", "top", show=False),
@@ -274,15 +364,21 @@ class Preview(ModalScreen):
 		self.cursor_offset = 0
 		self.highlights = []                  # what to draw: (start, span, anchor)
 		self.notes = []                       # where the notes are: (position, anchor, note)
+		self.pattern = ""                     # the search in force, exactly as typed
+		self.needle = ""                      # the pattern without a `\c`/`\C` suffix
+		self.matches = []                     # where the search is: offsets
+		self.search_origin = None             # where `/` was pressed, for `Escape`
 
 	def compose(self) -> ComposeResult:
 		yield Static(self.heading, id="preview-title")
 		yield MarkdownViewer(self.body, show_table_of_contents=False)
-		yield Static("", id="note-strip")
+		yield NoteStrip("", id="note-strip")
+		yield SearchInput(placeholder="/", id="search-bar")
 		yield Footer()
 
 	def on_mount(self) -> None:
 		self.query_one("#note-strip").display = False
+		self.query_one("#search-bar").display = False
 		self.query_one(MarkdownViewer).focus()
 		# Not here: a screen's on_mount runs before its children have built, so neither the
 		# document nor the block a jump needs exists yet. Wait for them.
@@ -362,7 +458,8 @@ class Preview(ModalScreen):
 		The strip is a widget of the preview, not of the document, and it docks in a layer of
 		its own. So showing it moves nothing: the text keeps its height, its scroll position
 		and its line count, and the note lies over the page the way a window does. A note
-		mounted into the document would take a row out of it and shift every line below.
+		mounted into the document would take a row out of it and shift every line below. It
+		sits on the row above its line, so the line stays visible under it.
 
 		The text is never written into its line either: that would move every character offset
 		in the model, and the cursor with them.
@@ -372,28 +469,68 @@ class Preview(ModalScreen):
 		if here is None:
 			strip.display = False
 			return
-		strip.update(f"note · {here[2]}")
+		strip.update(f"note\n{here[2]}")
 		strip.display = True
+		# `scroll_to` settles on the next layout, so the scroll offset the row is measured
+		# against is not final until the refresh. Place there, not on this frame.
+		self.call_after_refresh(self.place_note_strip)
+
+	def place_note_strip(self):
+		"""Put the strip on the row directly above the noted line.
+
+		`offset` is measured from where `dock: top` put the strip -- the top of the preview --
+		so both the target row and the clamp are converted from screen rows first. When the
+		noted line is the top row of the view there is no room above it, and the clamp pins the
+		strip over that line rather than letting it leave the view.
+
+		The row comes from the block's content position minus the scroll, not from the block's
+		`region`: the region follows the layout, and a view that has just scrolled has not run
+		its layout yet, so the region is one scroll behind.
+
+		The height is the outer height: the note's rows plus its border and padding. The box is
+		centred across the view, and its lower edge sits on the row above its line.
+		"""
+		strip = self.query_one("#note-strip", Static)
+		if not strip.display or self.document is None:
+			return
+		block = self.document.block_at(self.cursor_offset)
+		if block is None:
+			return
+		viewer = self.query_one(MarkdownViewer)
+		row = viewer.region.y + block.widget.virtual_region.y - int(viewer.scroll_offset.y)
+		size = strip.outer_size
+		above = row - size.height
+		x = max((viewer.region.width - size.width) // 2, 0)
+		strip.styles.offset = (x, max(above, viewer.region.y) - self.region.y)
 
 	def paint(self):
 		"""Draw the document with the cursor and the selection it currently has."""
 		if self.document is None:
 			return
 		ranges = [(start, start + span) for start, span, _ in self.highlights]
+		# A line with a note wears the same wash as a highlight, so a reader can see at a glance
+		# which lines they have written on. The box names the one under the cursor; the tint is
+		# the map of all of them.
+		for position, _, _ in self.notes:
+			block = self.document.block_at(position)
+			if block is not None:
+				ranges.append((block.start, block.end))
 		if self.selecting:
 			ranges.append((self.anchor_offset, self.cursor_offset))
-		self.document.paint(cursor=self.cursor_offset, ranges=ranges)
+		found = [(match, match + len(self.needle)) for match in self.matches]
+		self.document.paint(cursor=self.cursor_offset, ranges=ranges, found=found)
 
 	def top_offset(self):
 		"""The offset of the first block on screen."""
 		return self.visible_offset(self.query_one(MarkdownViewer).scroll_offset.y)
 
 	def centre_offset(self):
-		"""The offset of the block nearest the middle of the screen: where the eye is.
+		"""The offset of the block nearest the middle of the screen: where to open.
 
-		Not the top of the view. A reader scrolls until the passage they want is in front of
-		them, and the top of the screen is by then something they have already read past --
-		so a selection that starts there starts in the wrong place.
+		Used once, when the document opens: the reader has scrolled until the passage they want
+		is in front of them, and the middle of the view is where their eye is. The top of the
+		view is by then something they have already read past. After that the cursor is theirs
+		-- `a` starts a selection where they left it, not here.
 		"""
 		viewer = self.query_one(MarkdownViewer)
 		return self.visible_offset(viewer.scroll_offset.y + viewer.size.height // 2)
@@ -475,9 +612,28 @@ class Preview(ModalScreen):
 			answered,
 		)
 
+	def action_edit_note(self) -> None:
+		"""`C`: change the note on this line.
+
+		`N` owns a note from first word to delete, and this is the third thing a reader does
+		with one: say it again, differently. The line is the only thing a note is attached to,
+		so saving from here replaces the note on the line rather than adding a second one.
+		"""
+		if self.document is None:
+			return
+		existing = self.note_here()
+		if existing is None:
+			self.notify("no note on this line -- N writes one")
+			return
+		self.pending_g = False
+		self.app.push_screen(
+			NotePrompt(existing[2], title="edit this note"), self.note_written
+		)
+
 	def note_deleted(self, note) -> None:
 		"""The reader confirmed: the note goes, here and in the database."""
 		self.notes = [row for row in self.notes if row != tuple(note)]
+		self.paint()
 		self.show_note()
 		self.post_message(self.NoteRemoved(self.book_id, note[0]))
 
@@ -490,16 +646,121 @@ class Preview(ModalScreen):
 		self.notes = [note for note in self.notes if not (block.start <= note[0] < block.end)]
 		self.notes.append((block.start, anchor, text))
 		self.notes.sort()
+		self.paint()
 		self.post_message(self.NoteSaved(self.book_id, block.start, anchor, text))
 		self.show_note()
 
 	def action_next_note(self) -> None:
-		"""`N`: the next line with a note on it, wrapping round at the end of the file."""
+		"""`N`: the next line with a note on it, wrapping round at the end of the file.
+
+		The note is the reason for the jump, so the line is brought to the middle of the view
+		rather than to the nearest edge: with the box just above it, both are in the reader's eye
+		at once. The other motions keep `follow_cursor`'s least-scroll, because there the tiny
+		step is the point.
+		"""
 		if self.document is None or not self.notes:
 			self.notify("no notes in this document")
 			return
 		ahead = [position for position, _, _ in self.notes if position > self.cursor_offset]
-		self.move_cursor(ahead[0] if ahead else self.notes[0][0])
+		position = ahead[0] if ahead else self.notes[0][0]
+		block = self.document.block_at(position)
+		if block is None:
+			return
+		self.pending_g = False
+		self.cursor_offset = position
+		self.paint()
+		viewer = self.query_one(MarkdownViewer)
+		# One scroll only. `follow_cursor` would scroll to the nearest edge first, and a second
+		# scroll in the same frame leaves both the offset and the strip's row one frame behind.
+		centre = block.widget.virtual_region.y - viewer.size.height // 2
+		viewer.scroll_to(y=max(centre, 0), animate=False)
+		self.show_note()
+
+	def action_search(self) -> None:
+		"""`/`: search this document, from where the cursor is, as the pattern is typed."""
+		if self.document is None:
+			return
+		self.pending_g = False
+		self.search_origin = self.cursor_offset
+		bar = self.query_one("#search-bar", SearchInput)
+		bar.value = ""
+		bar.display = True
+		bar.focus()
+
+	def action_search_forward(self) -> None:
+		"""`>`: the next match, wrapping."""
+		self.step_search(1)
+
+	def action_search_back(self) -> None:
+		"""`<`: the match before this one, wrapping."""
+		self.step_search(-1)
+
+	def step_search(self, step) -> None:
+		"""Next or previous match. `/` first: there is nothing to step without a pattern."""
+		if self.document is None:
+			return
+		if not self.pattern:
+			self.notify("press / then type to search")
+			return
+		if not self.matches:
+			self.notify(f"no match for {self.needle}")
+			return
+		self.move_cursor(self.document.match_near(self.matches, self.cursor_offset, step))
+
+	def live_search(self, pattern) -> None:
+		"""Every keystroke: draw the matches, and take the cursor to the first one from here.
+
+		The document is one string, so the search is `str.find` over it -- a needle that spans
+		a soft line break is found where the terminal draws two lines -- and the hit is an
+		offset the cursor can stand on.
+		"""
+		if self.document is None:
+			return
+		self.pattern = pattern
+		self.needle, sensitive = self.smart_case(pattern)
+		self.matches = self.document.search(self.needle, sensitive)
+		if not self.matches:
+			self.paint()
+			if self.needle:
+				self.notify(f"no match for {self.needle}")
+			return
+		origin = self.search_origin if self.search_origin is not None else self.cursor_offset
+		later = [match for match in self.matches if match >= origin]
+		self.move_cursor(later[0] if later else self.matches[0])
+
+	def smart_case(self, pattern):
+		r"""Vim's `\c` / `\C` at the end of the pattern, else sensitive only if it has a capital."""
+		if pattern.endswith("\\c"):
+			return pattern[:-2], False
+		if pattern.endswith("\\C"):
+			return pattern[:-2], True
+		return pattern, any(character.isupper() for character in pattern)
+
+	def accept_search(self) -> None:
+		"""`Enter`: the pattern stays, the cursor stays on its match, the bar closes."""
+		self.query_one("#search-bar", SearchInput).display = False
+		self.query_one(MarkdownViewer).focus()
+		self.search_origin = None
+
+	def cancel_search(self) -> None:
+		"""`Escape`: forget the search, and put the cursor back where `/` was pressed."""
+		self.pattern = ""
+		self.needle = ""
+		self.matches = []
+		self.query_one("#search-bar", SearchInput).display = False
+		self.query_one(MarkdownViewer).focus()
+		if self.search_origin is not None:
+			self.move_cursor(self.search_origin)
+			self.search_origin = None
+		self.paint()
+
+	def on_input_changed(self, event: Input.Changed) -> None:
+		if event.input.id == "search-bar":
+			self.live_search(event.value)
+
+	def on_input_submitted(self, event: Input.Submitted) -> None:
+		if event.input.id == "search-bar":
+			self.accept_search()
 
 	def action_select(self) -> None:
 		"""`a`: mark a range, or take the mark away.
@@ -520,7 +781,9 @@ class Preview(ModalScreen):
 			return
 		if not self.selecting:
 			self.selecting = True
-			self.cursor_offset = self.centre_offset()
+			# The selection starts where the cursor is. There is a cursor on the page from the
+			# moment the document opens, so the reader has already put it on the words they
+			# mean; moving it to the middle of the screen takes it off them again.
 			self.anchor_offset = self.cursor_offset
 			self.paint()
 			self.notify("selecting: h/l by character, j/k by block, a to mark it, q to drop it")
@@ -635,6 +898,16 @@ class Preview(ModalScreen):
 		"""`k`: the cursor up a block."""
 		if self.document:
 			self.move_cursor(self.document.move_k(self.cursor_offset))
+
+	def action_line_down(self) -> None:
+		"""`J`: the cursor down a drawn line, inside a block that wraps and across blocks."""
+		if self.document:
+			self.move_cursor(self.document.move_line(self.cursor_offset, 1))
+
+	def action_line_up(self) -> None:
+		"""`K`: the cursor up a drawn line."""
+		if self.document:
+			self.move_cursor(self.document.move_line(self.cursor_offset, -1))
 
 	def scroll_view(self, rows) -> None:
 		"""Move the view, and bring the cursor back on screen if it fell off."""

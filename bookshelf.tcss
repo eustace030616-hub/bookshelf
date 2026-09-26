@@ -19,12 +19,19 @@ Preview { background: $surface; }
 #preview-title { height: 1; background: $panel; color: $text-muted; padding: 0 1; }
 MarkdownViewer { height: 1fr; }
 /* the note on the cursor's line: a strip in a layer of its own, so it lies over the document
-   instead of taking a row out of it. Shown and hidden on a layer, the text below does not
-   move at all -- which is what makes it feel like a window rather than a paragraph */
-Preview { layers: base note; }
-#note-strip { layer: note; dock: bottom; width: 1fr; height: auto; max-height: 5;
-              background: $panel; color: $text-warning; padding: 0 1; border-top: solid $warning; }
+   instead of taking a row out of it. It docks to the top of the layer and the screen offsets it
+   down to the line above the note -- shown and hidden on that layer, the text below does not
+   move at all, which is what makes it feel like a window rather than a paragraph */
+Preview { layers: base note search; }
+#note-strip { layer: note; dock: top; width: auto; max-width: 90%; height: auto; max-height: 6;
+              background: $panel; color: $text-warning; padding: 0 1; text-align: center;
+              border: round $warning; }
 #note-box { width: 76; height: auto; border: thick $warning; background: $surface; padding: 1 2; }
+#note-input { height: 6; border: none; background: $surface; }
+/* the `/` search bar: the bottom row while a search is being typed, over the footer, in a
+   layer of its own so the page behind it does not move */
+#search-bar { layer: search; dock: bottom; width: 1fr; height: 1; border: none;
+              background: $panel; color: $text; }
 #note-title { text-style: bold; color: $text-warning; }
 #note-hint { color: $text-muted; margin-top: 1; }
 

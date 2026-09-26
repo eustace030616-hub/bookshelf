@@ -43,9 +43,11 @@ The list is the main screen. Every key below acts on the highlighted row.
 guard confirms with `Enter` or with the key that opened it -- `m` for a mount, `n` for an
 unmount -- so one line of hint names every key that works.
 
-The preview answers to its own keys: `j`/`k`, `h`/`l`, `w`/`b`, `gg`/`G` and `ctrl-g`
-move the cursor, `ctrl-d`/`ctrl-u` and `ctrl-f`/`ctrl-b` move the view, `m` marks a place,
-`a` marks a range, `N` writes a note and `n` finds them, `q` closes. `m` there
+The preview answers to its own keys: `j`/`k` by block and `J`/`K` by drawn line, `h`/`l`,
+`w`/`b`, `gg`/`G` and `ctrl-g`
+move the cursor, `ctrl-d`/`ctrl-u` and `ctrl-f`/`ctrl-b` move the view, `/` searches the
+document and `<`/`>` step the matches, `m` marks a place,
+`a` marks a range, `N` writes a note, `C` edits one and `n` finds them, `q` closes. `m` there
 is a mark, not a mount -- below the list, a key means what the screen needs it to mean.
 
 ## Modes
@@ -203,18 +205,23 @@ only closes the document when there is none.
 
 `N` writes a note on the line the cursor is on, and `n` jumps to the next line that has one,
 wrapping round at the end of the file -- which is how you find notes you wrote months ago. One
-note per line: `N` on a noted line offers to delete it, and asks first.
+note per line: `N` on a noted line offers to delete it, and asks first. `C` on a noted line
+opens the composer on that note, and saving replaces it.
 
-The note is a strip along the bottom, and it is only there while the cursor is on its line.
-It lies in a layer of its own, over the document rather than in it, so showing and hiding it
-moves nothing: the page keeps its height, its scroll position and its line breaks, and the text
-you are reading does not jump. A note written into its line would take a row out of the page and
-shift every line below it.
+The note is a box on the line above its own, centred across the view, and it is only there
+while the cursor is on its line. It lies in a layer of its own, over the document rather than
+in it, so showing and hiding it moves nothing: the page keeps its height, its scroll position
+and its line breaks, and the text you are reading does not jump. A note written into its line
+would take a row out of the page and shift every line below it. The line the note belongs to
+wears the same wash as a highlight, so the noted lines are visible at a glance.
 
-The composer saves with `Enter` and leaves with `Escape` (or `ctrl-q`, which discards what you
-have typed). `Enter` on an empty line leaves nothing behind. It is not a `q` to leave, because
-it is a text field: a note that begins with "q" is a note somebody will write, and a letter
-that both types and leaves is a letter the field eats.
+The composer takes more than one line: `tab` indents to the next tab stop, and `shift-enter`
+starts the next line at the indentation of the line it came from. `Enter` saves and `Escape`
+leaves (or `ctrl-q`, which discards what you have typed). `Enter` on an empty line leaves
+nothing behind. Tab is not the focus key here -- the box is the only thing to focus, and
+`Escape` is the way out. It is not a `q` to leave, because it is a text field: a note that
+begins with "q" is a note somebody will write, and a letter that both types and leaves is a
+letter the field eats.
 
 The range is stored with the text it covers, so it comes back on the same sentence after the
 file is re-read; a range whose words are gone is dropped rather than drawn in the wrong place.
@@ -300,11 +307,19 @@ The same shelf is a terminal app and a web page. The terminal is where the shelf
 -- mounting, updating, starring -- and the browser is where it is read, which is why the
 server has no write route at all.
 
+The page carries the reader's own marks: a highlight is a wash behind the words it covered, and
+a note is a callout above the block it was written on. Neither is written from the browser --
+the rows are read and drawn, which is the whole point of the read-only server. A document's own
+navigation is a `note` button that steps through its notes, a `find` box that highlights on the
+page and steps with Enter, and the `reload` every page keeps; the book/code switch lives on the
+shelf, because a document is already one mode's row.
+
 | | Terminal (this machine) | Browser (anywhere) |
 |---|---|---|
-| modes | `t`, per switch | `?mode=book` or `?mode=code` in the URL |
+| modes | `t`, per switch | shelf page only: `?mode=book` or `?mode=code` |
 | star | on every row; `s` sets it | on every row; read-only |
 | reading | `i` opens the viewer, `q` closes it | one page per document |
+| your marks | highlights and notes, drawn in the viewer | the same highlights and notes on the page, read-only |
 | writing | mount, unmount, `u`, `s` | nothing |
 | gestures | the key tables above | links, scroll, back-swipe |
 

@@ -5,15 +5,17 @@ How the shelf is built, and why. What it does, and which key does what, is in
 
 ## Layout
 
-Nineteen files and 3,361 lines. Two views of one data layer -- the terminal app and the
+Twenty files and 4,109 lines. Two views of one data layer -- the terminal app and the
 web front end -- and nothing below them knows either exists.
 
 ```
 bookshelf_tui.py         the app: modes, reload, keys          548
         │
-        ├── bookshelf_screens.py     the dialogs and the trees             861
-        ├── bookshelf_web.py         the shelf over HTTP, GET only         511
-        ├── bookshelf_reading.py     the document as a model, and the      274
+        ├── bookshelf_screens.py     the dialogs and the trees            1134
+        ├── bookshelf_web.py         the shelf over HTTP, GET only         654
+        ├── bookshelf_annotate.py    a reader's marks put back into        221
+        │                            the served HTML
+        ├── bookshelf_reading.py     the document as a model, and the      378
         │                            cursor over it
         ├── bookshelf_html.py        HTML read as Markdown                 220
         ├── bookshelf_main.py        the `bookshelf` command               51
@@ -34,7 +36,7 @@ bookshelf_tui.py         the app: modes, reload, keys          548
         bookshelf_schema_v5.sql  the documents themselves              38
         bookshelf_schema_v6.sql  a reader's annotations                38
         bookshelf_schema_v7.sql  a marked range is a highlight         39
-        bookshelf.tcss           every rule the app draws with         34
+        bookshelf.tcss           every rule the app draws with         41
         Dockerfile               the server, without a UI              39
                     │
                  shelf.db
@@ -70,6 +72,13 @@ bookshelf_tui.py         the app: modes, reload, keys          548
 │                               would take a row out of the page and shift everything below;
 │                               writing the text into its line would move every character
 │                               offset in the model, and the cursor with them
+│ the browser paints no offsets   a highlight and a note are stored as offsets into the plain
+│                               text the terminal draws, and the served HTML has no such text.
+│                               bookshelf_annotate finds each stored anchor in the HTML instead,
+│                               with whitespace collapsed on both sides -- the terminal writes a
+│                               soft break as a space and the HTML as a newline -- and drops an
+│                               anchor whose words are gone rather than mark the wrong sentence,
+│                               the same rule resolve_highlights uses
 │ the composer saves on Enter   and leaves on Escape, not `q`: a text field belongs to its
 │                               text, and a note beginning with "q" is unwritable if that
 │                               letter also means leave. Measured, not assumed -- the first

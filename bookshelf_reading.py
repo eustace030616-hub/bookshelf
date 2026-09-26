@@ -38,6 +38,9 @@ CURSOR = Style(reverse=True)
 # as a string, and combining that with the parsed styles a fence already carries raises
 # `Color + str` deep inside its renderer. Color.parse is what makes the style fully parsed.
 SELECTED = Style(background=Color.parse("#F0E2B8"))
+# A search match. A cooler wash than SELECTED, because a match and a highlight can sit on the
+# same words: a reader looking for their own mark must not find the search's instead.
+FOUND = Style(background=Color.parse("#DCE6F0"))
 BLOCK_SEPARATOR = "\n"
 PIECE_SEPARATOR = " "
 
@@ -150,6 +153,33 @@ class Document:
 		"""Where a remembered piece of text is now, or -1. How a stored range is re-found."""
 		return self.text.find(needle) if needle else -1
 
+	def search(self, needle: str, sensitive: bool = False) -> list[int]:
+		r"""Every offset where `needle` occurs, in reading order.
+
+		Literal, not a regular expression: a reader is looking for words on the page, not
+		writing a pattern. Smart-case decides `sensitive`; the caller strips any `\c`/`\C`
+		override before handing the needle over.
+		"""
+		if not needle:
+			return []
+		haystack = self.text if sensitive else self.text.lower()
+		pin = needle if sensitive else needle.lower()
+		at, out = haystack.find(pin), []
+		while at >= 0:
+			out.append(at)
+			at = haystack.find(pin, at + 1)
+		return out
+
+	def match_near(self, matches, offset: int, step: int):
+		"""The match `step` places from `offset`, wrapping; the match at `offset` is skipped."""
+		if not matches:
+			return None
+		if step > 0:
+			later = [match for match in matches if match > offset]
+			return later[0] if later else matches[0]
+		earlier = [match for match in matches if match < offset]
+		return earlier[-1] if earlier else matches[-1]
+
 	def spans(self, start: int, end: int) -> list[tuple[Piece, int, int]]:
 		"""The pieces a range covers, as (piece, local start, local end) -- what to draw."""
 		start, end = min(start, end), max(start, end)
@@ -242,9 +272,80 @@ class Document:
 		below = self.blocks[index + 1]
 		return below.start + min(offset - block.start, max(below.length - 1, 0))
 
+	def move_line(self, offset: int, step: int) -> int:
+		"""One drawn line down (`step` 1) or up (`step` -1), keeping the column.
+
+		`j`/`k` move a whole block -- the paragraph or the fence. A paragraph that wraps over
+		five rows is still one block, and this is the step between its rows. At the first or
+		last row of the block there is no row to step to inside it, so the move falls back to
+		`j`/`k`: the key never stalls at a boundary.
+		"""
+		piece = self.piece_at(offset)
+		if piece is None:
+			return offset
+		width = piece.widget.content_size.width
+		if width <= 0:
+			return self.move_j(offset) if step > 0 else self.move_k(offset)
+		lines = self.visual_lines(piece, width)
+		local = offset - piece.start
+		for index, (start, length) in enumerate(lines):
+			if start <= local < start + length or index == len(lines) - 1:
+				column = local - start
+				target = index + step
+				if 0 <= target < len(lines):
+					next_start, next_length = lines[target]
+					return piece.start + next_start + min(column, max(next_length - 1, 0))
+				return self.block_line(offset, column, step)
+		return offset
+
+	def block_line(self, offset: int, column: int, step: int) -> int:
+		"""A drawn line in the block next door, for the step that leaves this one.
+
+		Down lands on the neighbour's first line, up on its last, with `column` kept -- so two
+		successive lines are always one drawn line apart, even across a block boundary.
+		"""
+		block = self.block_at(offset)
+		index = self.blocks.index(block)
+		if step > 0:
+			if index + 1 >= len(self.blocks):
+				return offset
+			start, length = self.edge_line(self.blocks[index + 1], last=False)
+		else:
+			if index == 0:
+				return offset
+			start, length = self.edge_line(self.blocks[index - 1], last=True)
+		return start + min(column, max(length - 1, 0))
+
+	def edge_line(self, block, last: bool):
+		"""The first or last drawn line of a block, as (document offset, length)."""
+		piece = block.pieces[-1] if last else block.pieces[0]
+		width = piece.widget.content_size.width
+		if width <= 0:
+			return piece.start + (len(piece.text) - 1 if last else 0), max(len(piece.text), 1)
+		start, length = self.visual_lines(piece, width)[-1 if last else 0]
+		return piece.start + start, length
+
+	def visual_lines(self, piece, width):
+		"""The piece's text as it is drawn: (start, length) per line, in piece offsets.
+
+		`Content.wrap` breaks at spaces and drops the space at each break, so the drawn lines
+		are found back in the text in order; a running total would drift by one per break.
+		"""
+		out, position = [], 0
+		for line in piece.original.wrap(width):
+			text = line.plain
+			if not text:
+				out.append((position, 0))
+				continue
+			found = piece.text.find(text, position)
+			found = position if found < 0 else found
+			out.append((found, len(text)))
+			position = found + len(text)
+		return out
+
 	# ------------------------------------------------------------------ drawing
 
-	def paint(self, cursor: int | None = None, ranges=()):
+	def paint(self, cursor: int | None = None, ranges=(), found=()):
 		"""Draw the document again: the text it had, plus the styles asked for here.
 
 		Each piece is re-derived from its original rather than updated, which is what makes
@@ -255,6 +356,9 @@ class Document:
 		cursor one character.
 		"""
 		styles: dict[int, list[tuple[int, int, Style]]] = {}
+		for start, end in found:
+			for piece, first, last in self.spans(start, end):
+				styles.setdefault(id(piece), []).append((first, last, FOUND))
 		for start, end in ranges:
 			for piece, first, last in self.spans(start, end):
 				styles.setdefault(id(piece), []).append((first, last, SELECTED))
