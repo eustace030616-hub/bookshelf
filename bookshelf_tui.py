@@ -37,6 +37,7 @@ from textual.widgets import Footer, Header, Markdown, Static
 from textual.widgets._markdown import MarkdownFence
 
 import bookshelf_db as db
+import bookshelf_publish
 import bookshelf_repo as repo
 from bookshelf_scan import EVERY_KIND, MODES, row_name, star_mark
 from bookshelf_screens import BookTree, MountScreen, Preview, UnmountScreen, find_node, force_line_rebuild
@@ -307,12 +308,21 @@ class BookshelfApp(App):
 				a, r, read, gone = repo.sync_root(conn, root["id"], EVERY_KIND)
 				added, removed, ingested, missing = added + a, removed + r, ingested + read, missing + gone
 			stored = repo.stored_totals(conn)[1]
-		self.call_from_thread(self.synced, added, removed, ingested, stored, missing, quiet)
+		# The static host is a snapshot, so the walk is only half the update; publish it while we
+		# are already off the UI thread. A dead network is a note, never a failure.
+		published = bookshelf_publish.publish(self.db_path)
+		self.call_from_thread(self.synced, added, removed, ingested, stored, missing, quiet, published)
 
-	def synced(self, added, removed, ingested, stored, missing, quiet) -> None:
-		"""Back on the UI thread: the table matches the disk, so redraw."""
+	def synced(self, added, removed, ingested, stored, missing, quiet, published=None) -> None:
+		"""Back on the UI thread: the table matches the disk, so redraw.
+
+		The startup walk stays quiet, including about a publish that could not happen: a shelf
+		opened with no network should not greet its reader with a warning. A manual `u` says so.
+		"""
 		self.syncing = False
 		self.reload()
+		if published and not published[0] and not quiet:
+			self.notify(f"not published: {published[1]}", severity="warning")
 		if quiet and not (added or removed or ingested or missing):
 			return
 		change = [
@@ -322,6 +332,8 @@ class BookshelfApp(App):
 		]
 		note = ", ".join(part for part in change if part) or "no changes"
 		note += f"  |  {stored / 1e6:.1f} MB stored" if stored else ""
+		if published and published[0]:
+			note += "  |  published"
 		if missing:
 			self.notify(f"update: {note}  |  {missing} root(s) not on disk", severity="warning")
 		else:

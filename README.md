@@ -327,6 +327,11 @@ branch); the shelf is then public at `https://<user>.github.io/<repo>/`. A stati
 server and no token, because it is public by construction -- that is the trade for having
 nothing to run.
 
+`u` publishes it as well. The walk writes the database and then renders and pushes the site, so
+the public copy stays in step without a second verb; with no network the local update still
+happens and the publish is skipped, and the app says so only when you asked for the update.
+The clone it pushes to is `$BOOKSHELF_SITE`, or `~/workspace/bookshelf-site`.
+
 ## What it does not do
 
 ```

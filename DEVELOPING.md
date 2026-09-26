@@ -5,15 +5,16 @@ How the shelf is built, and why. What it does, and which key does what, is in
 
 ## Layout
 
-Twenty-one files and 4,086 lines. Two views of one data layer -- the terminal app and the
+Twenty-two files and 4,148 lines. Two views of one data layer -- the terminal app and the
 web front end -- and nothing below them knows either exists.
 
 ```
-bookshelf_tui.py         the app: modes, reload, keys          542
+bookshelf_tui.py         the app: modes, reload, keys          554
         │
         ├── bookshelf_screens.py     the dialogs and the trees            1134
         ├── bookshelf_web.py         the shelf over HTTP, GET only         696
         ├── bookshelf_export.py      the shelf as static files             107
+        ├── bookshelf_publish.py     sync, then push the static shelf       50
         ├── bookshelf_annotate.py    a reader's marks put back into        221
         │                            the served HTML
         ├── bookshelf_reading.py     the document as a model, and the      378
@@ -267,6 +268,12 @@ than in production.
 │             annotate, the same panel and scripts, relative links, and no watcher because there
 │             is no server to ask. A static host has no process to attack and no machine to keep
 │             awake, which is the trade for having no token either
+│ the walk can publish   bookshelf_publish.py is the other half of a snapshot: after the walk
+│             writes the database, `u` renders the site clone and pushes it, so the public copy
+│             stays in step without a second verb. A missing clone or a dead network is a note,
+│             never a failure -- the local shelf still updates -- and the startup walk stays
+│             silent about it. This is the one part built to be deleted: when the shelf is served
+│             from a machine that is always on, publishing stops being a step
 │ the document's controls float   `note` and `shelf` are two dropdowns in a rounded panel fixed
 │             at the bottom of a document, not in the header: a thumb reaches it without a trip
 │             to the top, and it is draggable so it can be moved off the words. Released, it is
