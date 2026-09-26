@@ -5,15 +5,15 @@ How the shelf is built, and why. What it does, and which key does what, is in
 
 ## Layout
 
-Nineteen files and 2,983 lines. Two views of one data layer -- the terminal app and the
+Nineteen files and 3,044 lines. Two views of one data layer -- the terminal app and the
 web front end -- and nothing below them knows either exists.
 
 ```
 bookshelf_tui.py         the app: modes, reload, keys          534
         │
-        ├── bookshelf_screens.py     the dialogs and the trees             602
+        ├── bookshelf_screens.py     the dialogs and the trees             642
         ├── bookshelf_web.py         the shelf over HTTP, GET only         511
-        ├── bookshelf_reading.py     the document as a model, and the      215
+        ├── bookshelf_reading.py     the document as a model, and the      236
         │                            cursor over it
         ├── bookshelf_html.py        HTML read as Markdown                 220
         ├── bookshelf_main.py        the `bookshelf` command               51
@@ -63,6 +63,18 @@ bookshelf_tui.py         the app: modes, reload, keys          534
 │                               combining it with the parsed styles a code fence already carries
 │                               raises `Color + str` deep inside the renderer. Pass Color.parse
 │                               and the style is fully parsed, which is what the highlight does
+│ painting is incremental   a piece knows the styles it currently carries, and a paint writes
+│                               only the pieces whose styles changed. Without that, one
+│                               keystroke rewrote every piece in a 57 KB document -- 957
+│                               content writes for a single `j` -- and Textual invalidates a
+│                               widget's layout on every write, so each key paid for the whole
+│                               document's layout. Now: 0 to 2 writes per key, and opening the
+│                               document went from 957 writes to 1
+│ what is left is Textual's   that same document is 246 Markdown blocks and 1,093 widgets to
+│                               mount: about 1.5 s to open, and about 36 ms of event path per
+│                               keypress before the app does anything. Two levers, if it comes
+│                               to it: draw the cursor as a selection rather than rewriting
+│                               content, or page the document so one section is mounted
 │ the reading model is separate   a rendered document is a tree of widgets, and a tree is a
 │                               poor place to keep a position. bookshelf_reading reads it once
 │                               into blocks, pieces and one string, so every position after

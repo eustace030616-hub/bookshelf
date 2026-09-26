@@ -149,8 +149,12 @@ class Preview(ModalScreen):
 		Binding("a", "select", "select"),
 		Binding("h", "cursor_left", "left", show=False),
 		Binding("l", "cursor_right", "right", show=False),
-		Binding("j", "preview_down", "down", show=False),
-		Binding("k", "preview_up", "up", show=False),
+		Binding("j", "cursor_down", "down", show=False),
+		Binding("k", "cursor_up", "up", show=False),
+		Binding("ctrl+d", "scroll_half_down", "half page", show=False),
+		Binding("ctrl+u", "scroll_half_up", "half page", show=False),
+		Binding("ctrl+f", "scroll_page_down", "page", show=False),
+		Binding("ctrl+b", "scroll_page_up", "page", show=False),
 	]
 
 	class Marked(Message):
@@ -353,12 +357,31 @@ class Preview(ModalScreen):
 		self.post_message(self.Highlighted(self.book_id, start, end - start, text))
 
 	def move_cursor(self, offset) -> None:
-		"""Move the cursor, and keep the block it is in on screen."""
+		"""Move the cursor, and take the view with it: the cursor is never off screen."""
 		self.cursor_offset = offset
-		block = self.document.block_at(offset)
-		if block is not None:
-			self.query_one(MarkdownViewer).scroll_to(y=block.widget.virtual_region.y, animate=False)
+		self.follow_cursor()
 		self.paint()
+
+	def follow_cursor(self) -> None:
+		"""Scroll the least that keeps the cursor visible, rather than centring it.
+
+		Scrolling the cursor's block to the top on every `j` would jump the page under the
+		reader's eyes on each press. Only the amount that brings it back into view is moved,
+		so a line at a time reads as a line at a time.
+		"""
+		if self.document is None:
+			return
+		block = self.document.block_at(self.cursor_offset)
+		if block is None:
+			return
+		viewer = self.query_one(MarkdownViewer)
+		region = block.widget.virtual_region
+		top = viewer.scroll_offset.y
+		height = viewer.size.height
+		if region.y < top:
+			viewer.scroll_to(y=region.y, animate=False)
+		elif region.y + region.height > top + height:
+			viewer.scroll_to(y=region.y + region.height - height, animate=False)
 
 	def action_cursor_left(self) -> None:
 		"""`h`: back a character. The cursor is there to be placed, not only to select with."""
@@ -386,19 +409,36 @@ class Preview(ModalScreen):
 	# MarkdownViewer scrolls one row with the arrow keys; j/k jump PREVIEW_SCROLL rows -- or
 	# move the cursor a block at a time while a selection is open, which is what the same key
 	# means in the mode it is in.
-	def action_preview_down(self) -> None:
-		if self.selecting:
+	def action_cursor_down(self) -> None:
+		"""`j`: the cursor down a block; the view follows only as far as it must."""
+		if self.document:
 			self.move_cursor(self.document.move_j(self.cursor_offset))
-			return
-		self.query_one(MarkdownViewer).scroll_relative(y=PREVIEW_SCROLL, animate=False)
+
+	def action_cursor_up(self) -> None:
+		"""`k`: the cursor up a block."""
+		if self.document:
+			self.move_cursor(self.document.move_k(self.cursor_offset))
+
+	def scroll_view(self, rows) -> None:
+		"""Move the view, and bring the cursor back on screen if it fell off."""
+		self.query_one(MarkdownViewer).scroll_relative(y=rows, animate=False)
 		self.clamp_cursor()
 
-	def action_preview_up(self) -> None:
-		if self.selecting:
-			self.move_cursor(self.document.move_k(self.cursor_offset))
-			return
-		self.query_one(MarkdownViewer).scroll_relative(y=-PREVIEW_SCROLL, animate=False)
-		self.clamp_cursor()
+	def action_scroll_half_down(self) -> None:
+		"""`ctrl-d`: half a page of text, the cursor only if it would be left behind."""
+		self.scroll_view(self.query_one(MarkdownViewer).size.height // 2)
+
+	def action_scroll_half_up(self) -> None:
+		"""`ctrl-u`: half a page up."""
+		self.scroll_view(-self.query_one(MarkdownViewer).size.height // 2)
+
+	def action_scroll_page_down(self) -> None:
+		"""`ctrl-f`: a page."""
+		self.scroll_view(self.query_one(MarkdownViewer).size.height - 2)
+
+	def action_scroll_page_up(self) -> None:
+		"""`ctrl-b`: a page up."""
+		self.scroll_view(-(self.query_one(MarkdownViewer).size.height - 2))
 
 	def clamp_cursor(self) -> None:
 		"""Keep the cursor on screen after a scroll: a cursor nobody can see is no cursor."""

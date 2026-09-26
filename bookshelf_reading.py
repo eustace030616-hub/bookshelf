@@ -63,6 +63,7 @@ class Piece:
 	original: Content
 	text: str                  # verbatim, so a local offset is a real offset into `original`
 	start: int                 # offset of this piece in the document text
+	painted: tuple = ()        # the styles it currently carries, so a repaint can skip it
 
 	@property
 	def end(self) -> int:
@@ -166,12 +167,24 @@ class Document:
 	# ------------------------------------------------------------------ moving
 
 	def move_h(self, offset: int) -> int:
+		"""Back a character, crossing into the block above at its start."""
+		if not self.blocks:
+			return offset
 		block = self.block_at(offset)
-		return max(offset - 1, block.start) if block else offset
+		if offset > block.start:
+			return offset - 1
+		index = self.blocks.index(block)
+		return self.blocks[index - 1].end - 1 if index else offset
 
 	def move_l(self, offset: int) -> int:
+		"""On a character, crossing into the block below at its end."""
+		if not self.blocks:
+			return offset
 		block = self.block_at(offset)
-		return min(offset + 1, block.end - 1) if block else offset
+		if offset < block.end - 1:
+			return offset + 1
+		index = self.blocks.index(block)
+		return self.blocks[index + 1].start if index < len(self.blocks) - 1 else offset
 
 	def move_k(self, offset: int) -> int:
 		"""Up a block, keeping the column, as vim keeps it."""
@@ -196,8 +209,12 @@ class Document:
 	def paint(self, cursor: int | None = None, ranges=()):
 		"""Draw the document again: the text it had, plus the styles asked for here.
 
-		Every piece is re-derived, not updated, which is what makes this idempotent: a piece
-		that was underlined and no longer should be is simply not asked for again.
+		Each piece is re-derived from its original rather than updated, which is what makes
+		this idempotent -- a piece that was marked and no longer is simply is not asked for
+		again. And a piece whose styles did not change is not touched at all: writing to a
+		widget invalidates its layout, so a full repaint per keystroke costs the whole document
+		its layout on every key. Nine hundred pieces is nine hundred layout passes for moving a
+		cursor one character.
 		"""
 		styles: dict[int, list[tuple[int, int, Style]]] = {}
 		for start, end in ranges:
@@ -209,7 +226,11 @@ class Document:
 
 		for block in self.blocks:
 			for piece in block.pieces:
+				wanted = tuple(styles.get(id(piece), ()))
+				if wanted == piece.painted:
+					continue
 				content = piece.original
-				for first, last, style in styles.get(id(piece), ()):
+				for first, last, style in wanted:
 					content = content.stylize(style, first, last)
 				draw(piece.widget, content)
+				piece.painted = wanted

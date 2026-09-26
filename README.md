@@ -43,9 +43,9 @@ The list is the main screen. Every key below acts on the highlighted row.
 guard confirms with `Enter` or with the key that opened it -- `m` for a mount, `n` for an
 unmount -- so one line of hint names every key that works.
 
-The preview answers to its own keys: `j`/`k` scroll (or move the selection while one is
-open), `m` marks a place, `a` underlines a range, `q` closes. `m` there is a mark, not a
-mount -- below the list, a key means what the screen needs it to mean.
+The preview answers to its own keys: `j`/`k` move the cursor, `ctrl-d`/`ctrl-u` and
+`ctrl-f`/`ctrl-b` move the view, `m` marks a place, `a` marks a range, `q` closes. `m` there
+is a mark, not a mount -- below the list, a key means what the screen needs it to mean.
 
 ## Modes
 
@@ -172,9 +172,9 @@ absence, so a list of unstarred rows still lines up in one column.
 `i` renders a text file in the app. Markdown is drawn as Markdown: headings, lists and
 code, from the file on disk. A `.py` or `.sql` file is drawn as one highlighted code
 block in the same viewer — the source is wrapped in a fence, so `# a comment` stays a
-comment instead of turning into a heading. `j` and `k` scroll five rows, the arrow keys
-scroll one, and `q` closes it -- Escape is left out on purpose, so the footer names the one
-key that leaves and a reader cannot lose the page with a stray keystroke.
+comment instead of turning into a heading. `q` closes it -- Escape is left out on purpose, so
+the footer names the one key that leaves and a reader cannot lose the page with a stray
+keystroke.
 
 `m` leaves a mark where you are. The next time you open that document it opens on the
 block you marked, and the mark is spent by being used — one jump, then it is gone. Pressing
@@ -183,16 +183,17 @@ of them. The mark is found by the text it was set on, so it survives the documen
 re-read; the row it was on is only a fallback.
 
 The cursor is on from the moment a document opens, at the middle of the screen -- not the
-top, which you have already read past -- and `h`/`l` place it a character at a time before you
-decide to mark anything. Scrolling leaves it where it is and drags it along if it would fall
-off the screen.
+top, which you have already read past. `j`/`k` move it a block at a time, keeping the column,
+and the view follows by the least it can, so a line at a time reads as a line at a time
+instead of jumping the page on every press. `h`/`l` move it a character at a time, crossing
+into the block above or below at the edges. The view has its own keys: `ctrl-d`/`ctrl-u` half a
+page, `ctrl-f`/`ctrl-b` a page, the arrows a row. Scrolling never leaves the cursor behind --
+it comes along if it would fall off the screen.
 
-`a` marks a range with a warm wash behind the words: it anchors at the cursor, `h`/`l` move a
-character at a time and `j`/`k` a block at a time (the same `j`/`k` that scroll while you are
-only reading, which is what the key means in the mode it is in), and a second `a` marks
-everything between the two ends. Pressing `a` with the cursor inside a mark you already made
-takes that mark away. `q` drops a selection you have changed your mind about, and only closes
-the document when there is none.
+`a` marks a range with a warm wash behind the words: it anchors at the cursor, and a second
+`a` marks everything between the two ends. Pressing `a` with the cursor inside a mark you
+already made takes that mark away. `q` drops a selection you have changed your mind about, and
+only closes the document when there is none.
 
 The range is stored with the text it covers, so it comes back on the same sentence after the
 file is re-read; a range whose words are gone is dropped rather than drawn in the wrong place.
