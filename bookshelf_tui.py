@@ -402,6 +402,11 @@ class BookshelfApp(App):
 			repo.add_highlight(conn, message.book_id, message.position, message.span, message.anchor)
 		self.notify(f"marked {len(message.anchor)} character(s)")
 
+	def on_preview_highlight_removed(self, message: Preview.HighlightRemoved) -> None:
+		"""The reader pressed `a` inside a marked range: that range goes."""
+		with db.session(self.db_path) as conn:
+			repo.remove_highlight(conn, message.book_id, message.position, message.span)
+
 	def read_and_store(self, conn, row):
 		"""Read one row's file and store it, for a row that predates the content table."""
 		path = Path(row["root_path"]) / row["path"]

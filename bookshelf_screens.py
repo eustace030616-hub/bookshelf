@@ -163,6 +163,15 @@ class Preview(ModalScreen):
 			self.anchor = anchor
 			self.position = position
 
+	class HighlightRemoved(Message):
+		"""`a` was pressed inside a marked range: forget that one."""
+
+		def __init__(self, book_id, position, span):
+			super().__init__()
+			self.book_id = book_id
+			self.position = position
+			self.span = span
+
 	class Highlighted(Message):
 		"""`a` was pressed twice: mark this range, and remember it."""
 
@@ -214,6 +223,10 @@ class Preview(ModalScreen):
 			return
 		self.document = Document(markdown)
 		self.resolve_highlights()
+		if not self.selecting:
+			# The cursor is on from the moment the document opens, at the middle of the view:
+			# a reader has to be able to see where a selection would start before starting one.
+			self.cursor_offset = self.centre_offset()
 		self.paint()
 		if self.jump:
 			anchor, position = self.jump
@@ -243,7 +256,7 @@ class Preview(ModalScreen):
 		ranges = [(start, start + span) for start, span, _ in self.highlights]
 		if self.selecting:
 			ranges.append((self.anchor_offset, self.cursor_offset))
-		self.document.paint(cursor=self.cursor_offset if self.selecting else None, ranges=ranges)
+		self.document.paint(cursor=self.cursor_offset, ranges=ranges)
 
 	def top_offset(self):
 		"""The offset of the first block on screen."""
@@ -299,14 +312,28 @@ class Preview(ModalScreen):
 		anchor, position = self.anchor_at_top()
 		self.post_message(self.Marked(self.book_id, anchor, position))
 
-	def action_select(self) -> None:
-		"""`a`: start a selection at the cursor, and the next `a` underlines it.
+	def covering(self, offset):
+		"""The marked range the cursor is inside, or None. What a second `a` takes away."""
+		for start, span, anchor in self.highlights:
+			if start <= offset < start + span:
+				return (start, span, anchor)
+		return None
 
-		In reading mode the cursor is wherever the reader is looking -- the top of the view --
-		so the first press anchors there, the movement keys take over, and the second press
-		hands the range to the app.
+	def action_select(self) -> None:
+		"""`a`: mark a range, or take the mark away.
+
+		Three cases, in the order a reader meets them. Inside a range that is already marked:
+		the mark goes. Otherwise: a selection starts at the cursor, the movement keys take
+		over, and the next `a` hands the range to the app.
 		"""
 		if self.document is None:
+			return
+		marked = self.covering(self.cursor_offset)
+		if not self.selecting and marked:
+			self.highlights.remove(marked)
+			self.paint()
+			self.post_message(self.HighlightRemoved(self.book_id, marked[0], marked[1]))
+			self.notify("mark removed")
 			return
 		if not self.selecting:
 			self.selecting = True
@@ -334,18 +361,14 @@ class Preview(ModalScreen):
 		self.paint()
 
 	def action_cursor_left(self) -> None:
-		"""`h`: back a character, while selecting."""
-		if self.selecting:
+		"""`h`: back a character. The cursor is there to be placed, not only to select with."""
+		if self.document:
 			self.move_cursor(self.document.move_h(self.cursor_offset))
-		else:
-			self.notify("press a to start selecting")
 
 	def action_cursor_right(self) -> None:
-		"""`l`: on a character, while selecting."""
-		if self.selecting:
+		"""`l`: on a character."""
+		if self.document:
 			self.move_cursor(self.document.move_l(self.cursor_offset))
-		else:
-			self.notify("press a to start selecting")
 
 	def action_close_preview(self) -> None:
 		"""`q`: drop a selection if one is open, otherwise leave.
@@ -368,12 +391,27 @@ class Preview(ModalScreen):
 			self.move_cursor(self.document.move_j(self.cursor_offset))
 			return
 		self.query_one(MarkdownViewer).scroll_relative(y=PREVIEW_SCROLL, animate=False)
+		self.clamp_cursor()
 
 	def action_preview_up(self) -> None:
 		if self.selecting:
 			self.move_cursor(self.document.move_k(self.cursor_offset))
 			return
 		self.query_one(MarkdownViewer).scroll_relative(y=-PREVIEW_SCROLL, animate=False)
+		self.clamp_cursor()
+
+	def clamp_cursor(self) -> None:
+		"""Keep the cursor on screen after a scroll: a cursor nobody can see is no cursor."""
+		if self.document is None or not self.document.blocks:
+			return
+		viewer = self.query_one(MarkdownViewer)
+		top = self.visible_offset(viewer.scroll_offset.y)
+		bottom = self.visible_offset(viewer.scroll_offset.y + viewer.size.height - 1)
+		if self.cursor_offset < top:
+			self.cursor_offset = top
+		elif self.cursor_offset > bottom:
+			self.cursor_offset = bottom
+		self.paint()
 
 
 class PickerScreen(ModalScreen):

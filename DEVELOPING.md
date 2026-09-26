@@ -5,20 +5,20 @@ How the shelf is built, and why. What it does, and which key does what, is in
 
 ## Layout
 
-Nineteen files and 2,926 lines. Two views of one data layer -- the terminal app and the
+Nineteen files and 2,983 lines. Two views of one data layer -- the terminal app and the
 web front end -- and nothing below them knows either exists.
 
 ```
-bookshelf_tui.py         the app: modes, reload, keys          529
+bookshelf_tui.py         the app: modes, reload, keys          534
         │
-        ├── bookshelf_screens.py     the dialogs and the trees             564
+        ├── bookshelf_screens.py     the dialogs and the trees             602
         ├── bookshelf_web.py         the shelf over HTTP, GET only         511
         ├── bookshelf_reading.py     the document as a model, and the      215
         │                            cursor over it
         ├── bookshelf_html.py        HTML read as Markdown                 220
         ├── bookshelf_main.py        the `bookshelf` command               51
         │
-        ├── bookshelf_repo.py        the verbs, the re-walk, the           317
+        ├── bookshelf_repo.py        the verbs, the re-walk, the           331
         │                            ingest
         ├── bookshelf_scan.py        the kinds, the modes, how a           95
         │                            row is named
@@ -111,7 +111,10 @@ annotation         one row per thing a reader says about a document: a mark, a
 │ annotations are not content   a note survives a `u` because it is not in the file: the
 │               folder is re-walked, `content` is rewritten, and `annotation` is untouched
 │ one table, three features   a mark is a position, a highlighted range is a range, a note
-│               is a range with words. `anchor` holds the text it is attached to, so it can be
+│               is a range with words. `a` covers two of the three verbs on the same key: it
+│               starts a range, and pressing it inside a range a reader already made removes
+│               it -- pointing at your own mark means "not this", and no separate key was
+│               worth adding for it `anchor` holds the text it is attached to, so it can be
 │               found again after a re-render -- a row or an offset alone does not survive
 │               an edit upstream
 │ staleness     `source_size` and `source_mtime` are what make `u` cheap -- it reads

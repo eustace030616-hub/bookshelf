@@ -264,6 +264,20 @@ def add_highlight(conn, book_id, position, span, anchor):
 	)
 
 
+def remove_highlight(conn, book_id, position, span):
+	"""Forget one marked range. Returns True if a row went.
+
+	Position and span are the key as well as the address: a reader pressing `a` inside a range
+	is pointing at that range, and two ranges that start and end in the same place are the same
+	mark to them.
+	"""
+	return conn.execute(
+		"DELETE FROM annotation WHERE book_id = ? AND kind = 'highlight' "
+		"AND position = ? AND span = ?",
+		(book_id, position, span),
+	).rowcount == 1
+
+
 def highlights_for(conn, book_id):
 	"""Every marked range on one document, in reading order: (position, span, anchor)."""
 	return [
