@@ -59,6 +59,21 @@ pre { background:var(--panel); padding:.7rem .8rem; border-radius:4px; overflow-
 code { font-family:"JetBrains Mono", ui-monospace, Menlo, monospace; font-size:.92em; }
 table { border-collapse:collapse; width:100%; font-size:.95rem; }
 th,td { text-align:left; padding:.35rem .5rem; border-bottom:1px solid var(--panel); }
+img { max-width:100%; height:auto; }
+/* The app's own code palette, so a .py page in the browser and in the terminal match:
+   comment grey, keyword brick, string olive, number and decorator gold, rest ink. */
+pre.code { border:1px solid var(--panel); }
+.c, .c1, .cm { color:#6F6A5C; font-style:italic; }
+.k, .kn, .kd, .kc { color:#8C3A24; }
+.s, .s1, .s2, .sd, .sb { color:#4E6425; }
+.m, .mi, .mf, .mh { color:#8A6A1B; }
+.nd { color:#8A6A1B; }
+.nf, .nc { color:var(--ink); font-weight:600; }
+@media (max-width: 44rem) {
+  body { padding:1rem .9rem 3rem; font-size:17px; }
+  table { display:block; overflow-x:auto; }
+  h1 { font-size:1.35rem; }
+}
 blockquote { margin:0; padding-left:.9rem; border-left:3px solid var(--brand); color:#5b574c; }
 footer { margin-top:2rem; color:#6b6a64; font-size:.85rem; }
 .meta { color:#6b6a64; font-size:.85rem; }
@@ -149,6 +164,27 @@ def index_page(conn, mode):
 	return page(label, "".join(blocks), nav(mode, counts), footer)
 
 
+def code_html(kind, body):
+	"""A code document as highlighted HTML, or as monospace text when Pygments is absent.
+
+	The colours come out as the same five classes the stylesheet names, which are the app's
+	palette -- a `.py` page should not look like a different program in a browser.
+	"""
+	try:
+		from pygments import highlight
+		from pygments.formatters import HtmlFormatter
+		from pygments.lexers import get_lexer_by_name
+	except ImportError:
+		return f"<pre><code>{html.escape(body)}</code></pre>"
+	lexer = {"py": "python", "sql": "sql"}.get(kind, kind)
+	try:
+		lexer = get_lexer_by_name(lexer)
+	except Exception:
+		return f"<pre><code>{html.escape(body)}</code></pre>"
+	formatter = HtmlFormatter(nowrap=True, cssclass="code")
+	return '<pre class="code"><code>' + highlight(body, lexer, formatter) + "</code></pre>"
+
+
 def markdown_to_html(text):
 	"""Markdown as HTML: markdown-it when it is installed, the small renderer when not."""
 	try:
@@ -188,6 +224,7 @@ def simple_markdown(text):
 		for pattern, tag in ((r"\*\*(.+?)\*\*", "strong"), (r"`(.+?)`", "code"), (r"\*(.+?)\*", "em")):
 			escaped = re.sub(pattern, lambda match, tag=tag: f"<{tag}>{match.group(1)}</{tag}>", escaped)
 
+		is_row = stripped.startswith("|")
 		if listed and not is_item:
 			out.append("</ul>")
 			listed = False
@@ -203,6 +240,10 @@ def simple_markdown(text):
 			out.append(f"<h{level}>{escaped}</h{level}>")
 		elif is_quote:
 			out.append(f"<blockquote>{escaped}</blockquote>")
+		elif is_row:
+			# A table without a table engine: monospace keeps the columns lined up, which is
+			# more honest than one paragraph per row of pipes.
+			out.append(f'<pre class="code"><code>{stripped}</code></pre>')
 		else:
 			out.append(f"<p>{escaped}</p>")
 	if listed:
@@ -315,7 +356,7 @@ class Handler(BaseHTTPRequestHandler):
 		mode = MODES["code"] if row["kind"] in MODES["code"].kinds.values() else MODES["book"]
 		title = row_name(row, mode)
 		back = f'<p class="meta"><a href="/?mode={mode.name}">&#8592; back to the shelf</a></p>'
-		rendered = markdown_to_html(body) if row["kind"] == "md" else f"<pre><code>{html.escape(body)}</code></pre>"
+		rendered = markdown_to_html(body) if row["kind"] == "md" else code_html(row["kind"], body)
 		self.send(200, page(title, back + rendered, nav(mode), row["path"]))
 
 	def raw(self, conn, path):

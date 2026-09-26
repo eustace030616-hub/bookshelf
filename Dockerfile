@@ -21,6 +21,13 @@ FROM python:3.13-slim
 
 WORKDIR /srv
 
+# Two pure-Python libraries, and they are the difference between a readable page and a
+# crude one: markdown-it is the same renderer the terminal app uses (Textual depends on it),
+# so a document comes out the same in both places, and Pygments colours code with the app's
+# own palette. Both are optional at runtime -- the fallbacks stay -- but a browser without
+# them is where "readability is awful" came from.
+RUN pip install --no-cache-dir markdown-it-py pygments
+
 COPY bookshelf_db.py bookshelf_repo.py bookshelf_scan.py bookshelf_tree.py \
      bookshelf_html.py bookshelf_web.py ./
 

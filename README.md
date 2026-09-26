@@ -286,33 +286,33 @@ content            one row per file that has been read: the text itself, its siz
 
 ## How it is built
 
-Fifteen files and 2,185 lines. Two views of one data layer -- the terminal app and the
+Fifteen files and 2,256 lines. Two views of one data layer -- the terminal app and the
 web front end -- and nothing below them knows either exists.
 
 ```
-bookshelf_tui.py        the app: modes, reload, keys            521 lines
+bookshelf_tui.py        the app: modes, reload, keys  521 lines
         │
-        ├── bookshelf_screens.py the dialogs and the trees      347
+        ├── bookshelf_screens.py the dialogs and the trees            347
         │
-        ├── bookshelf_web.py     the shelf over HTTP, GET only  367
-        ├── bookshelf_html.py    HTML read as Markdown          220
-        ├── bookshelf_main.py    the `bookshelf` command        51
+        ├── bookshelf_web.py     the shelf over HTTP, GET only        431
+        ├── bookshelf_html.py    HTML read as Markdown                220
+        ├── bookshelf_main.py    the `bookshelf` command              51
         │
-        ├── bookshelf_repo.py    the verbs, the re-walk, the    262
+        ├── bookshelf_repo.py    the verbs, the re-walk, the          262
         │                        ingest
-        ├── bookshelf_scan.py    the kinds, the modes, how a    79
+        ├── bookshelf_scan.py    the kinds, the modes, how a          79
         │                        row is named
-        ├── bookshelf_tree.py    the shape a tree view needs    48
+        ├── bookshelf_tree.py    the shape a tree view needs          48
         │
-        └── bookshelf_db.py      connections and revisions,     71
+        └── bookshelf_db.py      connections and revisions,           71
                     │            one of which cannot write
-        bookshelf_schema.sql     the contract, revision 1       33
-        bookshelf_schema_v2.sql  the code kinds                 39
-        bookshelf_schema_v3.sql  the html kind                  36
-        bookshelf_schema_v4.sql  end of the pdf rows            16
-        bookshelf_schema_v5.sql  the documents themselves       38
-        bookshelf.tcss           every rule the app draws with  25
-        Dockerfile               the server, without a UI       32
+        bookshelf_schema.sql     the contract, revision 1         33
+        bookshelf_schema_v2.sql  the code kinds                   39
+        bookshelf_schema_v3.sql  the html kind                    36
+        bookshelf_schema_v4.sql  end of the pdf rows              16
+        bookshelf_schema_v5.sql  the documents themselves         38
+        bookshelf.tcss           every rule the app draws with    25
+        Dockerfile               the server, without a UI         39
                     │
                  shelf.db
 ```
@@ -393,9 +393,13 @@ python3 bookshelf_web.py --db shelf.db --token SECRET       # required off loopb
 │             its own fonts -- with a viewport tag added, because iOS otherwise lays a
 │             paper-shaped page out at 980px. Markdown and code are wrapped in this
 │             server's own page, using the app's palette
-│ when markdown-it is missing   the fallback renderer at the bottom of bookshelf_web.py
-│             covers headings, fences, lists, quotes and inline spans. A container with
-│             nothing installed loses polish, not the route
+│ the image installs two libraries   `markdown-it-py`, which is the renderer the terminal
+│             app already uses through Textual, and `pygments` for code. Same engine, same
+│             output: a document now reads the same on the phone and in the terminal
+│ fallbacks kept   with neither installed, bookshelf_web still renders headings, fences,
+│             lists, quotes, inline spans and pipe tables as monospace. That path is the
+│             last resort, not the default -- one paragraph per source line was the reason
+│             a phone page looked broken before those two lines went into the image
 │ the container proves the split   the image has no Textual in it, so the import would fail
 │             if the data layer had a UI dependency:
 │             docker build -t bookshelf-web .
