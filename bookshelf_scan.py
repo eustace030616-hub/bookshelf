@@ -4,17 +4,15 @@ One map per mode, and nothing else: adding a format is one line in one of these,
 other file changes. The mode table lives here rather than in the app because the mode is not
 a screen idea -- the browser front end needs the same table, and it cannot import Textual.
 
-A PDF is not here on purpose. A PDF is the format a document arrives in, not the format
-the shelf reads: convert it to HTML first, and one document is one row instead of a row
-per representation. Adding ".pdf" back is this dictionary and nothing else -- the schema
-CHECK still admits the kind.
+A PDF and an HTML page are formats a document arrives in, not the formats this shelf
+keeps: a converted document is Markdown by the time it lands here, so one document is one
+row. Adding a format is this dictionary and a schema revision for the kind.
 """
 from dataclasses import dataclass
 from pathlib import Path
 
 KINDS = {
 	".md": "md",
-	".html": "html",
 }
 
 CODE_KINDS = {

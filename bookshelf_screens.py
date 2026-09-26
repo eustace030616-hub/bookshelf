@@ -1081,7 +1081,7 @@ class MountScreen(PickerScreen):
 			title="Mount this folder?",
 			body=(
 				f"{path}\n\n"
-				"Every supported file under it is recorded -- .md .html .py .sql.\n"
+				"Every supported file under it is recorded -- .md .py .sql.\n"
 				"`t` switches which of those the list shows."
 			),
 			verb="mount",

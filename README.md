@@ -1,11 +1,7 @@
 # bookshelf
 
-A terminal bookshelf over one or more folders of HTML and Markdown files — and, in
-code mode, over Python and SQL.
-
-A PDF is not indexed. A PDF is the format a document arrives in, not the format the shelf
-reads: convert it to HTML first, and one document is one row instead of a row per
-representation.
+A terminal bookshelf over one or more folders of Markdown files — and, in code mode, over
+Python and SQL.
 
 Nothing is moved, renamed or rewritten. A root is a folder the shelf points at; a
 book is one file inside it. The database holds the shelf — the star — and the files
@@ -31,7 +27,7 @@ The list is the main screen. Every key below acts on the highlighted row.
 |---|---|
 | `j` / `k` | move down and up. Arrow keys do the same |
 | `Enter` | open the file in the default application. On a folder, expand or collapse it |
-| `i` | inspect in the app: Markdown as Markdown, code as a fence. A converted page says to press `Enter` |
+| `i` | inspect in the app: Markdown as Markdown, code as a fence |
 | `m` | mount a folder — browse the disk and add it as a root |
 | `n` | unmount a folder — pick a root and forget it |
 | `t` | switch between book mode and code mode |
@@ -57,11 +53,11 @@ what `n` is asked about.
 
 | Mode | Shown in the tree |
 |---|---|
-| book (default) | `md` and `html` rows |
+| book (default) | `md` rows |
 | code | `py` and `sql` rows |
 
 What a folder *contributes* does not depend on the mode. Mounting records every file the
-shelf can hold — `.md`, `.html`, `.py`, `.sql` — and `t` decides which of those you see.
+shelf can hold — `.md`, `.py`, `.sql` — and `t` decides which of those you see.
 One rule for what a folder is worth, so mounting in one mode and updating in the other
 cannot disagree about what is on the shelf.
 
@@ -87,7 +83,7 @@ roots can be mounted; each book stores its path relative to its root, so moving
 a folder means re-registering one root rather than rewriting every book.
 
 Mounting walks the folder and records every file the shelf can hold under it, at any
-depth — `.md`, `.html`, `.py`, `.sql` — whichever mode you are in. `t` is a view, not a
+depth — `.md`, `.py`, `.sql` — whichever mode you are in. `t` is a view, not a
 filter on what gets recorded.
 
 | Key | In the folder picker |
@@ -231,11 +227,6 @@ emphasis -- and a reader needs to see at a glance which lines are theirs.
 The fence is sized to the file: one backtick more than the longest backtick run inside
 it, so a ``` in a Python docstring cannot end the block early.
 
-A converted page is not drawn in the app. It is HTML with its own design, and a terminal has no
-layout engine and no stylesheet; a second renderer that lifted the structure out of the markup
-was one more thing to keep in step. So `i` says the row is a converted page and points at
-`Enter`, which hands the file to the browser — that is where a page is read.
-
 ## Command line
 
 One command and one flag. There are no subcommands, because there is nothing to do
@@ -251,7 +242,7 @@ bookshelf -h                    what the app is and how to start it
 $ bookshelf -h
 usage: bookshelf [-h] [--db DB]
 
-a terminal bookshelf over folders of HTML, Markdown, Python and SQL.
+a terminal bookshelf over folders of Markdown, Python and SQL.
 
 This is a TUI. Run `bookshelf` and the shelf opens:
 
@@ -277,7 +268,7 @@ python3 bookshelf_web.py --db shelf.db --token SECRET       # required off loopb
 | Route | What it returns |
 |---|---|
 | `GET /` | the index, one mode at a time: `?mode=code` |
-| `GET /doc/<id>` | one document: HTML as it was stored, Markdown and code rendered here |
+| `GET /doc/<id>` | one document: Markdown and code rendered here |
 | `GET /raw/<id>` | the stored text, exactly as it is |
 | `GET /health` | counts, bytes, when the shelf was last walked, and a stamp of it |
 | `GET /stamp/<id>` | that stamp for one document, which is what a page watches |

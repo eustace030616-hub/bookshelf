@@ -277,24 +277,6 @@ FIND_SCRIPT = """<script>
 </script>"""
 
 
-def with_viewport(body):
-	"""Put a viewport tag into a stored document, or iOS lays it out at 980px and pinches.
-
-	A converted document was built for paper and carries no viewport, so the one tag that
-	makes it readable on a phone is added at the moment it is served -- not stored, because
-	the stored body is the artifact, and this is about the screen it is going to.
-	"""
-	if "name=\"viewport\"" in body or "name='viewport'" in body:
-		return body
-	if "</head>" in body:
-		return body.replace("</head>", VIEWPORT + "</head>", 1)
-	if "<body" in body:
-		return VIEWPORT + body
-	return VIEWPORT + body
-
-
-
-
 def tree_html(subtree, mode):
 	"""The shared tree shape as a nested list -- the same order the terminal app draws."""
 	items = []
@@ -543,13 +525,6 @@ class Handler(BaseHTTPRequestHandler):
 			self.send(404, page(row["title"], "<p>This row has no stored text yet. Run "
 											   "<code>u</code> in the terminal app.</p>", nav(MODES["book"])))
 			return
-		if row["kind"] == "html":
-			# A stored HTML document is a whole page with its own design -- a converted
-			# document keeps its parchment, its fonts and its page geometry. It goes out as
-			# it is, with the viewport added, and nothing of this server's styling around it:
-			# wrapping it in a template would nest two documents and lose the design.
-			self.send(200, with_viewport(body))
-			return
 		mode = MODES["code"] if row["kind"] in MODES["code"].kinds.values() else MODES["book"]
 		title = row_name(row, mode)
 		back = f'<p class="meta"><a href="/?mode={mode.name}">&#8592; back to the shelf</a></p>'
@@ -575,7 +550,7 @@ class Handler(BaseHTTPRequestHandler):
 		if body is None:
 			self.send(404, "not stored yet\n", "text/plain; charset=utf-8")
 			return
-		types = {"html": "text/html; charset=utf-8", "md": "text/markdown; charset=utf-8"}
+		types = {"md": "text/markdown; charset=utf-8"}
 		self.send(200, body, types.get(row["kind"], "text/plain; charset=utf-8"))
 
 	def stamp(self, conn, path):

@@ -2,7 +2,7 @@
 
 	j / k      move down / up             (arrows work too)
 	Enter      open the file, or expand a folder
-	i          inspect -- text, code and HTML render in-app; Enter opens it outside
+	i          inspect -- Markdown and code render in-app; Enter opens a file outside
 	m          mount a folder -- browse the disk, confirm, add it as a library
 	n          unmount a folder -- pick one, confirm, forget its books
 	t          book mode  <->  code mode
@@ -10,11 +10,11 @@
 	s          selected book: starred (important) on / off
 	q          quit
 
-`t` picks the mode, and the mode picks what the list shows: `.md` and `.html` in book mode,
-`.py` and `.sql` in code mode. A PDF is not indexed -- converting it to HTML is what puts a
-document on the shelf -- so one document is one row. Both libraries share one database and
-never mix on screen: the tree, the counts and the status line only ever show the mode you
-are in.
+`t` picks the mode, and the mode picks what the list shows: `.md` in book mode, `.py` and
+`.sql` in code mode. Only what the shelf can draw is indexed -- a converted document is
+Markdown by the time it lands here -- so one document is one row. Both libraries share one
+database and never mix on screen: the tree, the counts and the status line only ever show
+the mode you are in.
 
 The dialogs and trees are in bookshelf_screens, the rules for both are in README.md, and
 every colour and rule the app draws with is in bookshelf.tcss.
@@ -356,15 +356,10 @@ class BookshelfApp(App):
 		ingested yet (added before revision 5) is read from disk once and stored on the way
 		through, so the next `i` is a query and the next `u` costs nothing for it.
 
-		Markdown and code are text, so they are drawn as they are. A converted page is not: it
-		is markup with a design, a terminal has no layout engine, and the browser is where a
-		page is read -- `Enter` hands it over.
+		Markdown and code are text, so they are drawn as they are.
 		"""
 		row = self.selected()
 		if row is None:
-			return
-		if row["kind"] == "html":
-			self.notify("a converted page -- Enter opens it in the browser")
 			return
 		with db.session(self.db_path) as conn:
 			body = repo.content_of(conn, row["id"])

@@ -5,14 +5,14 @@ How the shelf is built, and why. What it does, and which key does what, is in
 
 ## Layout
 
-Nineteen files and 3,887 lines. Two views of one data layer -- the terminal app and the
+Twenty files and 3,911 lines. Two views of one data layer -- the terminal app and the
 web front end -- and nothing below them knows either exists.
 
 ```
-bookshelf_tui.py         the app: modes, reload, keys          548
+bookshelf_tui.py         the app: modes, reload, keys          542
         │
         ├── bookshelf_screens.py     the dialogs and the trees            1134
-        ├── bookshelf_web.py         the shelf over HTTP, GET only         654
+        ├── bookshelf_web.py         the shelf over HTTP, GET only         628
         ├── bookshelf_annotate.py    a reader's marks put back into        221
         │                            the served HTML
         ├── bookshelf_reading.py     the document as a model, and the      378
@@ -21,11 +21,11 @@ bookshelf_tui.py         the app: modes, reload, keys          548
         │
         ├── bookshelf_repo.py        the verbs, the re-walk, the           368
         │                            ingest
-        ├── bookshelf_scan.py        the kinds, the modes, how a           95
+        ├── bookshelf_scan.py        the kinds, the modes, how a           93
         │                            row is named
         ├── bookshelf_tree.py        the shape a tree view needs           48
         │
-        └── bookshelf_db.py          connections and revisions,            73
+        └── bookshelf_db.py          connections and revisions,            74
         │                            one of which cannot write
         │
         bookshelf_schema.sql     the contract, revision 1              33
@@ -35,6 +35,7 @@ bookshelf_tui.py         the app: modes, reload, keys          548
         bookshelf_schema_v5.sql  the documents themselves              38
         bookshelf_schema_v6.sql  a reader's annotations                38
         bookshelf_schema_v7.sql  a marked range is a highlight         39
+        bookshelf_schema_v8.sql  the shelf stops holding html/pdf      55
         bookshelf.tcss           every rule the app draws with         41
         Dockerfile               the server, without a UI              39
                     │
@@ -64,13 +65,15 @@ bookshelf_tui.py         the app: modes, reload, keys          548
 │                               combining it with the parsed styles a code fence already carries
 │                               raises `Color + str` deep inside the renderer. Pass Color.parse
 │                               and the style is fully parsed, which is what the highlight does
-│ the note is a layer, not a line   the strip belongs to the preview screen and docks in a CSS
+│ the note is a layer, not a line   the box belongs to the preview screen and lives in a CSS
 │                               layer of its own, so showing it costs nothing: measured with it
 │                               hidden and shown, the viewer keeps its height, its scroll and
-│                               its content size to the row. A note mounted into the document
-│                               would take a row out of the page and shift everything below;
-│                               writing the text into its line would move every character
-│                               offset in the model, and the cursor with them
+│                               its content size to the row. It is offset to the row above its
+│                               line, and the line itself wears the same wash as a highlight.
+│                               A note mounted into the document would take a row out of the
+│                               page and shift everything below; writing the text into its line
+│                               would move every character offset in the model, and the cursor
+│                               with them
 │ the browser paints no offsets   a highlight and a note are stored as offsets into the plain
 │                               text the terminal draws, and the served HTML has no such text.
 │                               bookshelf_annotate finds each stored anchor in the HTML instead,
@@ -81,7 +84,15 @@ bookshelf_tui.py         the app: modes, reload, keys          548
 │ the composer saves on Enter   and leaves on Escape, not `q`: a text field belongs to its
 │                               text, and a note beginning with "q" is unwritable if that
 │                               letter also means leave. Measured, not assumed -- the first
-│                               version ate the "q" and saved nothing
+│                               version ate the "q" and saved nothing. It takes more than one
+│                               line now: `tab` indents to the next tab stop and `shift+enter`
+│                               starts an indented line, so a note can carry the shape of what
+│                               it describes, and `C` reopens it on the line it belongs to
+│ search is a string operation   `/` searches the one document string and `<`/`>` step the
+│                               hits, wrapping; the matches get a second, cooler wash so a
+│                               search never reads as one of the reader's own highlights. Vim
+│                               puts `n` and `N` on this and this shelf cannot: those are the
+│                               note keys, so the angle brackets take the job
 │ painting is incremental   a piece knows the styles it currently carries, and a paint writes
 │                               only the pieces whose styles changed. Without that, one
 │                               keystroke rewrote every piece in a 57 KB document -- 957
@@ -116,7 +127,8 @@ bookshelf_tui.py         the app: modes, reload, keys          548
 
 Four tables: `bookshelf_schema.sql` for the first two, then one script per revision --
 `v2` the code kinds, `v3` the html kind, `v4` the end of the pdf rows, `v5` the documents
-themselves, `v6` what a reader says about them, `v7` the range a reader marks.
+themselves, `v6` what a reader says about them, `v7` the range a reader marks, `v8` the
+shelf stops holding html and pdf.
 
 ```
 roots              one row per mounted folder. `path` is the only absolute path
@@ -132,7 +144,7 @@ annotation         one row per thing a reader says about a document: a mark, a
 
 | Column | Values |
 |---|---|
-| `kind` | `md`, `html`, `py`, `sql` (`pdf` is reserved: revision 3 admits it, nothing writes it) |
+| `kind` | `md`, `py`, `sql` |
 | `is_important` | `0` or `1` |
 
 ```
@@ -166,7 +178,10 @@ Migrations are the exception: the database moves forward rather than being rebui
 order, and a fresh file gets revision 1 and is then migrated like any other, so there is
 one path through the code. Revision 2 rebuilt `books` to widen a CHECK constraint, which
 SQLite cannot ALTER — the procedure sqlite.org documents, with `books.id` copied so the
-stars stayed attached to the same files.
+stars stayed attached to the same files. Revision 8 rebuilt it once more to narrow the
+constraint, and unlike revisions 2 and 3 it ran while `content` and `annotation` referenced
+the table: foreign keys are turned off around that rebuild, or the `DROP` would cascade and
+take every stored document and note with it.
 
 ## Appearance
 
@@ -245,10 +260,12 @@ than in production.
 │             the star stay in the terminal app, on the machine with the files
 │ ids, not paths   a request names a row, never a file, so there is nothing to traverse
 │ no path traversal is not a policy here, it is the absence of a feature
-│ two renderings   a stored HTML document is served as the page it is -- its own design,
-│             its own fonts -- with a viewport tag added, because iOS otherwise lays a
-│             paper-shaped page out at 980px. Markdown and code are wrapped in this
-│             server's own page, using the app's palette
+│ one rendering   Markdown and code are wrapped in this server's own page, using the app's
+│             palette. There is no second page type: the shelf holds no HTML of its own
+│ the page has one nav row   `note`, `find` and `reload` share a sticky header, so the note a
+│             reader jumped to does not cost them the button that took them there. `find` is a
+│             client-side pass over the text nodes of `<main>`, wrapped in its own span so the
+│             server's `<mark>` highlights survive it
 │ the image installs two libraries   `markdown-it-py`, which is the renderer the terminal
 │             app already uses through Textual, and `pygments` for code. Same engine, same
 │             output: a document now reads the same on the phone and in the terminal
@@ -324,11 +341,11 @@ and every one of them has matched since the tree was written.
 ## Deferred
 
 ```
-│ search          an FTS5 index over `content.body` -- revision 6. It is the phone's best
-│                 feature and the reason the text is stored at all, but the ingest has to be
-│                 proven first
-│ binary kinds    everything in KINDS is text today. A PDF or an image would want a BLOB,
-│                 and Python's sqlite3 reads a BLOB whole into memory -- a decision to make
+│ shelf search    the reader searches the open document (`/`); searching every document still
+│                 wants an FTS5 index over `content.body`, which is the phone's best feature
+│                 and the reason the text is stored at all
+│ binary kinds    everything in KINDS is text today. An image would want a BLOB, and
+│                 Python's sqlite3 reads a BLOB whole into memory -- a decision to make
 │                 with the file size in hand, not before
 │ the pickers' Escape   the guards are `Enter` or the verb key, `q` to cancel; the two
 │                 pickers still accept Escape as well. Unifying them is one binding
