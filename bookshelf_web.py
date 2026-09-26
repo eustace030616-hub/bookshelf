@@ -26,6 +26,7 @@ import re
 import json
 import html
 import sqlite3
+import secrets
 import argparse
 import contextlib
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -533,14 +534,16 @@ class Handler(BaseHTTPRequestHandler):
 			supplied = header[7:] if header.startswith("Bearer ") else None
 		if supplied is None:
 			supplied = self.token_from_cookie()
-		if supplied == self.token:
+		if supplied is not None and secrets.compare_digest(supplied, self.token):
 			self.remember = query.get("k", [None])[0] == self.token
 			return True
 		self.send(401, page("not authorised", "<p>A token is required.</p>", ""))
 		return False
 
 	def log_message(self, fmt, *args):
-		print(f"  {self.address_string()} {fmt % args}", flush=True)
+		# The request line carries the token when it arrives as `?k=`: log the path without it,
+		# because a log is a file that outlives the request.
+		print(f"  {self.address_string()} {re.sub(r'k=[^&\\s\"]+', 'k=...', fmt % args)}", flush=True)
 
 	# ------------------------------------------------------------------ routes
 
@@ -592,8 +595,8 @@ class Handler(BaseHTTPRequestHandler):
 		# note above its block. Read-only like everything else -- the rows are read, not written.
 		rendered = annotate(rendered, repo.highlights_for(conn, row["id"]),
 							repo.notes_for(conn, row["id"]))
-		# The mode buttons stay on the shelf; a document navigates its own notes instead, and
-		# keeps the reload every page has.
+		# The mode buttons stay on the shelf; a document navigates its own notes and shelf
+		# instead, and has no reload at all -- the changed-bar still offers one when it matters.
 		placed = rendered.count('<aside class="note"')
 		body = back + rendered
 		# The controls live in a floating panel at the thumb, not in a bar at the top: the note

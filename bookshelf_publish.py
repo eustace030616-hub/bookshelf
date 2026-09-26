@@ -45,6 +45,6 @@ def publish(db_path, site=None):
 		push = subprocess.run(["git", "push"], cwd=site, capture_output=True, text=True)
 		if push.returncode:
 			return False, last_line(push, "git push failed")
-	except (OSError, subprocess.SubprocessError) as error:
+	except Exception as error:
 		return False, str(error)[:120]
 	return True, f"{pages} page(s) published"

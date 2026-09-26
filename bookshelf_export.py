@@ -16,6 +16,7 @@ machine that made it.
 from __future__ import annotations
 
 import argparse
+import contextlib
 import html
 from pathlib import Path
 
@@ -79,15 +80,15 @@ def export(db_path, out_dir):
 	out.mkdir(parents=True, exist_ok=True)
 	# Pages runs Jekyll unless told not to, and Jekyll ignores files it does not understand.
 	(out / ".nojekyll").write_text("", encoding="utf-8")
-	conn = db.connect_readonly(db_path)
 	written = 0
-	for row in repo.list_books(conn):
-		page = document(conn, row)
-		if page is None:
-			continue
-		(out / page_href(row)).write_text(page, encoding="utf-8")
-		written += 1
-	(out / "index.html").write_text(index(conn), encoding="utf-8")
+	with contextlib.closing(db.connect_readonly(db_path)) as conn:
+		for row in repo.list_books(conn):
+			page = document(conn, row)
+			if page is None:
+				continue
+			(out / page_href(row)).write_text(page, encoding="utf-8")
+			written += 1
+		(out / "index.html").write_text(index(conn), encoding="utf-8")
 	return written + 1
 
 
