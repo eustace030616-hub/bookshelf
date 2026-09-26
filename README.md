@@ -43,7 +43,7 @@ The list is the main screen. Every key below acts on the highlighted row.
 guard confirms with `Enter` or with the key that opened it -- `m` for a mount, `n` for an
 unmount -- so one line of hint names every key that works.
 
-The preview answers to its own keys: `j`/`k`, `h`/`l`, `w`/`b`/`e`, `gg`/`G` and `ctrl-g`
+The preview answers to its own keys: `j`/`k`, `h`/`l`, `w`/`b`, `gg`/`G` and `ctrl-g`
 move the cursor, `ctrl-d`/`ctrl-u` and `ctrl-f`/`ctrl-b` move the view, `m` marks a place,
 `a` marks a range, `q` closes. `m` there
 is a mark, not a mount -- below the list, a key means what the screen needs it to mean.
@@ -187,8 +187,8 @@ The cursor is on from the moment a document opens, at the middle of the screen -
 top, which you have already read past. `j`/`k` move it a block at a time, keeping the column,
 and the view follows by the least it can, so a line at a time reads as a line at a time
 instead of jumping the page on every press. `h`/`l` move it a character at a time, crossing
-into the block above or below at the edges. `w`, `b` and `e` move by word -- a word being a run
-of characters between spaces, so a filename counts as one word. `gg` goes to the top of the
+into the block above or below at the edges. `w` and `b` move by word -- a word being a run of
+characters between spaces, so a filename counts as one word. `gg` goes to the top of the
 file, `G` to its last block, and `ctrl-g` to the middle; a stray key between the two `g`
 presses forgets the first, so there is no mode to leave.
 

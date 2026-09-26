@@ -153,7 +153,6 @@ class Preview(ModalScreen):
 		Binding("k", "cursor_up", "up", show=False),
 		Binding("w", "word_forward", "word", show=False),
 		Binding("b", "word_back", "back", show=False),
-		Binding("e", "word_end", "word end", show=False),
 		Binding("g", "prefix_g", "top", show=False),
 		Binding("G", "file_end", "end of file", show=False),
 		Binding("ctrl+g", "file_middle", "middle", show=False),
@@ -430,11 +429,6 @@ class Preview(ModalScreen):
 		"""`b`: the previous word."""
 		if self.document:
 			self.move_cursor(self.document.move_b(self.cursor_offset))
-
-	def action_word_end(self) -> None:
-		"""`e`: the end of this word, or of the next one from a space."""
-		if self.document:
-			self.move_cursor(self.document.move_e(self.cursor_offset))
 
 	def action_prefix_g(self) -> None:
 		"""`g`: the first half of `gg`. A second `g` goes to the top; anything else forgets it.

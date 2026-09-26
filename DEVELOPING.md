@@ -5,15 +5,15 @@ How the shelf is built, and why. What it does, and which key does what, is in
 
 ## Layout
 
-Nineteen files and 3,144 lines. Two views of one data layer -- the terminal app and the
+Nineteen files and 3,128 lines. Two views of one data layer -- the terminal app and the
 web front end -- and nothing below them knows either exists.
 
 ```
 bookshelf_tui.py         the app: modes, reload, keys          534
         │
-        ├── bookshelf_screens.py     the dialogs and the trees             694
+        ├── bookshelf_screens.py     the dialogs and the trees             688
         ├── bookshelf_web.py         the shelf over HTTP, GET only         511
-        ├── bookshelf_reading.py     the document as a model, and the      284
+        ├── bookshelf_reading.py     the document as a model, and the      274
         │                            cursor over it
         ├── bookshelf_html.py        HTML read as Markdown                 220
         ├── bookshelf_main.py        the `bookshelf` command               51

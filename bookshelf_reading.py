@@ -211,16 +211,6 @@ class Document:
 			index -= 1
 		return index
 
-	def move_e(self, offset: int) -> int:
-		"""Forward to the last character of this word, or of the next one from a space."""
-		text, size = self.text, len(self.text)
-		index = offset
-		while index < size and text[index].isspace():
-			index += 1
-		while index < size and not text[index].isspace():
-			index += 1
-		return min(max(index - 1, 0), size - 1) if size else offset
-
 	def move_top(self, offset: int = 0) -> int:
 		"""The first character of the document."""
 		return 0
