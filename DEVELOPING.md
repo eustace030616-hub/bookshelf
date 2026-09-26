@@ -5,24 +5,24 @@ How the shelf is built, and why. What it does, and which key does what, is in
 
 ## Layout
 
-Sixteen files and 2,346 lines. Two views of one data layer -- the terminal app and the
+Seventeen files and 2,530 lines. Two views of one data layer -- the terminal app and the
 web front end -- and nothing below them knows either exists.
 
 ```
-bookshelf_tui.py         the app: modes, reload, keys          507
+bookshelf_tui.py         the app: modes, reload, keys          522
         │
-        ├── bookshelf_screens.py     the dialogs and the trees             355
+        ├── bookshelf_screens.py     the dialogs and the trees             455
         ├── bookshelf_web.py         the shelf over HTTP, GET only         511
         ├── bookshelf_html.py        HTML read as Markdown                 220
         ├── bookshelf_main.py        the `bookshelf` command               51
         │
-        ├── bookshelf_repo.py        the verbs, the re-walk, the           262
+        ├── bookshelf_repo.py        the verbs, the re-walk, the           292
         │                            ingest
         ├── bookshelf_scan.py        the kinds, the modes, how a           95
         │                            row is named
         ├── bookshelf_tree.py        the shape a tree view needs           48
         │
-        └── bookshelf_db.py          connections and revisions,            71
+        └── bookshelf_db.py          connections and revisions,            72
         │                            one of which cannot write
         │
         bookshelf_schema.sql     the contract, revision 1              33
@@ -30,6 +30,7 @@ bookshelf_tui.py         the app: modes, reload, keys          507
         bookshelf_schema_v3.sql  the html kind                         36
         bookshelf_schema_v4.sql  end of the pdf rows                   16
         bookshelf_schema_v5.sql  the documents themselves              38
+        bookshelf_schema_v6.sql  a reader's annotations                38
         bookshelf.tcss           every rule the app draws with         25
         Dockerfile               the server, without a UI              39
                     │
@@ -64,9 +65,9 @@ bookshelf_tui.py         the app: modes, reload, keys          507
 
 ## What it stores
 
-Three tables: `bookshelf_schema.sql` for the first two, then one script per revision —
+Four tables: `bookshelf_schema.sql` for the first two, then one script per revision --
 `v2` the code kinds, `v3` the html kind, `v4` the end of the pdf rows, `v5` the documents
-themselves.
+themselves, `v6` what a reader says about them.
 
 ```
 roots              one row per mounted folder. `path` is the only absolute path
@@ -75,6 +76,8 @@ books              one row per file: root_id, relative path, title, kind,
                    star, added_at
 content            one row per file that has been read: the text itself, its size,
                    and the size and mtime of the file it came from
+annotation         one row per thing a reader says about a document: a mark for now,
+                   an underline or a note later. kind, anchor, position, span, note
 ```
 
 | Column | Values |
@@ -90,6 +93,12 @@ content            one row per file that has been read: the text itself, its siz
 │ content       the body is the file verbatim, in its own table so `SELECT b.*` on
 │               books stays cheap: one document is read at a time, and a vanished
 │               file takes its body with it (ON DELETE CASCADE)
+│ annotations are not content   a note survives a `u` because it is not in the file: the
+│               folder is re-walked, `content` is rewritten, and `annotation` is untouched
+│ one table, three features   a mark is a position, an underline is a range, a note is a
+│               range with words. `anchor` holds the text it is attached to, so it can be
+│               found again after a re-render -- a row or an offset alone does not survive
+│               an edit upstream
 │ staleness     `source_size` and `source_mtime` are what make `u` cheap -- it reads
 │               only the files that changed. A row with no body yet is read from
 │               disk once by `i`, on the way through

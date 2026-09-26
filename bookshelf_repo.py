@@ -221,6 +221,36 @@ def sync_root(conn, root_id, kinds):
 	return len(on_disk - known.keys()), len(known.keys() - on_disk), ingested, False
 
 
+# ----------------------------------------------------------------- marks
+
+def set_mark(conn, book_id, anchor, position):
+	"""Remember where a reader stopped, replacing whatever was there.
+
+	One mark per document: the new one erases the old, because a reader has one place they
+	put the book down, not a history of them. The anchor is the text at the top of the view,
+	stored beside the row so the mark can be found again after the document is re-rendered.
+	"""
+	conn.execute("DELETE FROM annotation WHERE book_id = ? AND kind = 'mark'", (book_id,))
+	conn.execute(
+		"INSERT INTO annotation (book_id, kind, anchor, position) VALUES (?, 'mark', ?, ?)",
+		(book_id, anchor, position),
+	)
+
+
+def take_mark(conn, book_id):
+	"""The mark for one document, and it is used up by being read.
+
+	Read and delete in one transaction on purpose: a mark that survives its own jump would
+	take the reader to the same place twice, and the second time it would be wrong.
+	"""
+	row = conn.execute(
+		"SELECT anchor, position FROM annotation WHERE book_id = ? AND kind = 'mark'", (book_id,)
+	).fetchone()
+	if row is not None:
+		conn.execute("DELETE FROM annotation WHERE book_id = ? AND kind = 'mark'", (book_id,))
+	return row
+
+
 # ---------------------------------------------------------------------- list
 
 # ORDER BY cannot take a ? placeholder: a placeholder substitutes a *value*, and a column

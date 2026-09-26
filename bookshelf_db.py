@@ -2,7 +2,7 @@ import sqlite3, contextlib
 from pathlib import Path
 
 HERE = Path(__file__).parent
-SCHEMA_VERSION = 5
+SCHEMA_VERSION = 6
 SCHEMA_FILE = HERE / "bookshelf_schema.sql"
 
 # One script per revision, keyed by the revision it produces. Revision 1 is the whole
@@ -13,6 +13,7 @@ MIGRATIONS = {
 	3: HERE / "bookshelf_schema_v3.sql",
 	4: HERE / "bookshelf_schema_v4.sql",
 	5: HERE / "bookshelf_schema_v5.sql",
+	6: HERE / "bookshelf_schema_v6.sql",
 }
 
 def connect(db_path: str) -> sqlite3.Connection:

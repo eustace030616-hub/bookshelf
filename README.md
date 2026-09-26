@@ -43,6 +43,9 @@ The list is the main screen. Every key below acts on the highlighted row.
 guard confirms with `Enter` or with the key that opened it -- `m` for a mount, `n` for an
 unmount -- so one line of hint names every key that works.
 
+The preview answers to its own keys, and `m` is not `m` there: `j`/`k` scroll, `m` marks a
+place, `q` closes. Below the list, the key means what the screen needs it to mean.
+
 ## Modes
 
 `t` switches the app between two modes, and the mode decides what the list shows and
@@ -171,6 +174,12 @@ block in the same viewer — the source is wrapped in a fence, so `# a comment` 
 comment instead of turning into a heading. `j` and `k` scroll five rows, the arrow keys
 scroll one, and `q` closes it -- Escape is left out on purpose, so the footer names the one
 key that leaves and a reader cannot lose the page with a stray keystroke.
+
+`m` leaves a mark where you are. The next time you open that document it opens on the
+block you marked, and the mark is spent by being used — one jump, then it is gone. Pressing
+`m` again replaces it, because a reader has one place they put the book down, not a history
+of them. The mark is found by the text it was set on, so it survives the document being
+re-read; the row it was on is only a fallback.
 
 The fence is sized to the file: one backtick more than the longest backtick run inside
 it, so a ``` in a Python docstring cannot end the block early.

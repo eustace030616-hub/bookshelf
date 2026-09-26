@@ -369,6 +369,9 @@ class BookshelfApp(App):
 			body = repo.content_of(conn, row["id"])
 			if body is None:
 				body = self.read_and_store(conn, row)
+			# Taken, not read: a mark is spent by opening the document, so the jump happens
+			# once. Reading it here and passing it down keeps the database in the app.
+			mark = repo.take_mark(conn, row["id"])
 		if body is None:
 			return
 		if row["kind"] == "html":
@@ -378,7 +381,19 @@ class BookshelfApp(App):
 			# `#` stays a comment instead of becoming a heading, and the fence carries the
 			# language that colours it.
 			body = fenced(body, LANGUAGES.get(row["kind"], row["kind"]))
-		self.push_screen(Preview(f"{row['root_label']} / {row['path']}", body))
+		self.push_screen(
+			Preview(f"{row['root_label']} / {row['path']}", body, book_id=row["id"],
+					jump=tuple(mark) if mark else None)
+		)
+		if mark:
+			self.notify("opened at your mark -- it has now expired")
+
+	def on_preview_marked(self, message: Preview.Marked) -> None:
+		"""The reader pressed `m` in the preview: remember the place, and only that place."""
+		with db.session(self.db_path) as conn:
+			repo.set_mark(conn, message.book_id, message.anchor, message.position)
+		where = message.anchor[:40] or f"row {message.position}"
+		self.notify(f"marked at {where!r} -- one jump, then it expires")
 
 	def read_and_store(self, conn, row):
 		"""Read one row's file and store it, for a row that predates the content table."""
