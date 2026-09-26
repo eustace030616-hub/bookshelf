@@ -75,8 +75,12 @@ class Confirm(ModalScreen):
 	# No BINDINGS, on purpose. on_key() on a Screen runs *before* the App's binding check,
 	# so declaring bindings here would mean the App never saw the key. Every key that
 	# arrives is handled in on_key(), and everything else is swallowed.
-	YES_KEYS = ("y", "enter")
-	NO_KEYS = ("escape", "q")
+	# Two ways in, one way out. `enter` confirms any guard; the verb key -- the key that
+	# opened the dialog -- confirms the one it opened; `q` is the only way to revoke, which is
+	# the same key that leaves the preview and the pickers. `y` and `escape` used to work here
+	# and no longer do: three yes-keys and two escapes is not a prompt, it is a menu.
+	YES_KEYS = ("enter",)
+	NO_KEYS = ("q",)
 
 	def __init__(self, title, body, verb="confirm", yes_key=None):
 		super().__init__()
@@ -87,10 +91,11 @@ class Confirm(ModalScreen):
 
 	@property
 	def hint(self):
-		keys = "[enter] / [y]"
+		"""The keys that work, and only those: one line, two verbs, three keys."""
+		keys = "[enter]"
 		if self.yes_key:
 			keys += f" / [{self.yes_key}]"
-		return f"{keys}  {self.verb}    [esc] cancel"
+		return f"{keys}  {self.verb}    [q] cancel"
 
 	def compose(self) -> ComposeResult:
 		with Vertical(id="confirm-box"):
@@ -111,7 +116,7 @@ class Confirm(ModalScreen):
 		"""Every key the dialog sees, and nothing leaks to the list behind it.
 
 		The verb key is also yes: the key that opened this dialog confirms it. Anything
-		else is swallowed, so a stray t/f/s cannot act on a book while you are answering.
+		else is swallowed, so a stray t or s cannot act on a book while you are answering.
 		"""
 		event.stop()
 		event.prevent_default()
@@ -122,14 +127,17 @@ class Confirm(ModalScreen):
 
 
 class Preview(ModalScreen):
-	"""A text file rendered inside the TUI. `i`, `q` or Escape closes it.
+	"""A text file rendered inside the TUI. `q` closes it, and nothing else does.
+
+	Escape deliberately does not leave: this screen is a reading surface, the footer names
+	the one key that exits, and the app's other dialogs still answer to Escape as they should.
 
 	Markdown arrives as itself; code arrives already wrapped in a fence by the app, which
 	is what keeps `# a comment` a comment instead of a heading.
 	"""
 
 	BINDINGS = [
-		Binding("escape,q,i", "close_preview", "close"),
+		Binding("q", "close_preview", "close"),
 		Binding("j", "preview_down", "down", show=False),
 		Binding("k", "preview_up", "up", show=False),
 	]

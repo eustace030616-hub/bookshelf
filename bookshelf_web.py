@@ -35,7 +35,7 @@ from urllib.parse import urlparse, parse_qs
 import bookshelf_db as db
 import bookshelf_repo as repo
 from bookshelf_html import to_markdown
-from bookshelf_scan import MODES, row_name
+from bookshelf_scan import MODES, OFF_COLOUR, ON_COLOUR, row_name, star_mark
 from bookshelf_tree import children, plan
 
 VIEWPORT = '<meta name="viewport" content="width=device-width, initial-scale=1">'
@@ -43,7 +43,8 @@ VIEWPORT = '<meta name="viewport" content="width=device-width, initial-scale=1">
 # The palette is bookshelf.tcss's, so a page served to a phone and the app on the desk look
 # like the same shelf.
 STYLE = """
-:root { color-scheme: light dark; --ink:#3D3A31; --paper:#FDFAF1; --panel:#F4EDD9; --brand:#8A6A1B; }
+:root { color-scheme: light dark; --ink:#3D3A31; --paper:#FDFAF1; --panel:#F4EDD9;
+        --brand:#8A6A1B; --star-on:{star_on}; --star-off:{star_off}; }
 body { margin:0 auto; max-width:44rem; padding:1.2rem 1.1rem 4rem; background:var(--paper);
        color:var(--ink); font:16px/1.6 Charter, Georgia, "Times New Roman", serif; }
 h1,h2,h3 { line-height:1.25; } h1 { font-size:1.5rem; } h2 { font-size:1.15rem; }
@@ -53,7 +54,7 @@ nav a { margin-right:.9rem; font-weight:600; } nav a[aria-current] { text-decora
 ul.tree { list-style:none; padding-left:.2rem; } ul.tree ul { padding-left:1.1rem; }
 li.folder > span { color:var(--brand); font-weight:600; }
 li.file { margin:.15rem 0; }
-.star { color:#B8860B; }
+.dot { font-size:.9em; } .dot.on { color:var(--star-on); } .dot.off { color:var(--star-off); }
 pre { background:var(--panel); padding:.7rem .8rem; border-radius:4px; overflow-x:auto;
       font:13px/1.45 "JetBrains Mono", ui-monospace, Menlo, monospace; }
 code { font-family:"JetBrains Mono", ui-monospace, Menlo, monospace; font-size:.92em; }
@@ -76,6 +77,10 @@ pre.code { border:1px solid var(--panel); }
 }
 blockquote { margin:0; padding-left:.9rem; border-left:3px solid var(--brand); color:#5b574c; }
 footer { margin-top:2rem; color:#6b6a64; font-size:.85rem; }
+#changed { position:sticky; bottom:0; margin-top:1rem; text-align:center; }
+#changed a { display:inline-block; padding:.45rem .9rem; border-radius:999px; font-size:.9rem;
+            background:var(--brand); color:var(--paper); text-decoration:none; }
+nav a[title] { float:right; font-weight:400; font-size:.9rem; }
 .meta { color:#6b6a64; font-size:.85rem; }
 @media (prefers-color-scheme: dark) {
   :root { --ink:#e6e1d6; --paper:#191813; --panel:#242219; --brand:#d3ab52; }
@@ -86,14 +91,46 @@ footer { margin-top:2rem; color:#6b6a64; font-size:.85rem; }
 PAGE = """<!DOCTYPE html>
 <html lang="en"><head><meta charset="utf-8">{viewport}<title>{title}</title>
 <style>{style}</style></head>
-<body><header><nav>{nav}</nav></header>
+<body><header><nav>{nav}{reload_link}</nav></header>
 {body}
-<footer>{footer}</footer></body></html>
+<div id="changed" hidden><a href="{reload_href}">the shelf changed &middot; reload</a></div>
+<footer>{footer}</footer>{watcher}</body></html>
 """
 
+# Polling, not pushing. A page says which stamp it was rendered from; a few seconds later it
+# asks the server for the current one and, if it differs, reveals a bar offering a reload. It
+# never reloads by itself: a reader halfway down a document loses their place, and the whole
+# point of the button is that they decide. `.md` rendering and the stamp both come from the
+# database, so a change in the file on the Mac reaches a phone only after the copy is synced
+# -- this notices what the server's own copy did.
+WATCHER = """<script>
+(function () {
+  var here = %(stamp)s, url = %(url)s, bar = document.getElementById("changed");
+  setInterval(function () {
+    fetch(url, {cache: "no-store"}).then(function (r) { return r.json(); }).then(function (now) {
+      if (now.stamp !== here) { bar.hidden = false; }
+    }).catch(function () {});
+  }, %(every)d);
+})();
+</script>"""
 
-def page(title, body, nav, footer=""):
-	return PAGE.format(viewport=VIEWPORT, title=html.escape(title), style=STYLE, nav=nav, body=body, footer=footer)
+
+def page(title, body, nav, footer="", stamp=None, watch_url="/health", reload_href="", every=10):
+	"""One page. Given a stamp, the page also watches the server for a newer one."""
+	watcher = ""
+	if stamp is not None:
+		watcher = WATCHER % {"stamp": json.dumps(stamp), "url": json.dumps(watch_url), "every": every * 1000}
+	return PAGE.format(
+		viewport=VIEWPORT,
+		title=html.escape(title),
+		style=STYLE.replace("{star_on}", ON_COLOUR).replace("{star_off}", OFF_COLOUR),
+		nav=nav,
+		reload_link=f'<a href="{reload_href or "/"}" title="pull the database again">reload</a>',
+		reload_href=reload_href or "/",
+		body=body,
+		footer=footer,
+		watcher=watcher,
+	)
 
 
 def nav(mode, counts=None):
@@ -135,10 +172,11 @@ def tree_html(subtree, mode):
 			)
 			continue
 		row = value
-		mark = '<span class="star">&#9733;</span> ' if row["is_important"] else ""
+		glyph, _ = star_mark(row)
+		state = "on" if row["is_important"] else "off"
 		items.append(
-			f'<li class="file"><a href="/doc/{row["id"]}">{mark}'
-			f"{html.escape(row_name(row, mode))}</a></li>"
+			f'<li class="file"><a href="/doc/{row["id"]}">'
+			f'<span class="dot {state}">{glyph}</span> {html.escape(row_name(row, mode))}</a></li>'
 		)
 	return "".join(items)
 
@@ -161,7 +199,30 @@ def index_page(conn, mode):
 
 	footer = (f"{len(rows)} {mode.plural} in view &middot; {documents} documents stored "
 			  f"({size / 1e6:.1f} MB) &middot; last walked {html.escape(str(last))}")
-	return page(label, "".join(blocks), nav(mode, counts), footer)
+	return page(label, "".join(blocks), nav(mode, counts), footer,
+				stamp=shelf_stamp(conn), watch_url="/health", reload_href=f"/?mode={mode.name}")
+
+
+def shelf_stamp(conn):
+	"""What the shelf looks like right now, as one string a page can compare against.
+
+	Counts, bytes and the newest ingest together: a document added, removed or re-read all
+	change it, and seconds matter less than the fact that the answer differs.
+	"""
+	documents, size = repo.stored_totals(conn)
+	last = conn.execute("SELECT max(ingested_at) FROM content").fetchone()[0] or "never"
+	rows = len(repo.list_books(conn))
+	return f"{rows}:{documents}:{size}:{last}"
+
+
+def document_stamp(conn, book_id):
+	"""The same idea for one document: its ingest time, its size, and the file's mtime."""
+	row = conn.execute(
+		"SELECT ingested_at, bytes, source_mtime FROM content WHERE book_id = ?", (book_id,)
+	).fetchone()
+	if row is None:
+		return "missing"
+	return f"{row['ingested_at']}:{row['bytes']}:{row['source_mtime']}"
 
 
 def code_html(kind, body):
@@ -325,6 +386,8 @@ class Handler(BaseHTTPRequestHandler):
 					self.document(conn, parsed.path)
 				elif parsed.path.startswith("/raw/"):
 					self.raw(conn, parsed.path)
+				elif parsed.path.startswith("/stamp"):
+					self.stamp(conn, parsed.path)
 				else:
 					self.send(404, page("not found", "<p>No such page.</p>", ""))
 		except (OSError, sqlite3.Error) as error:
@@ -357,7 +420,10 @@ class Handler(BaseHTTPRequestHandler):
 		title = row_name(row, mode)
 		back = f'<p class="meta"><a href="/?mode={mode.name}">&#8592; back to the shelf</a></p>'
 		rendered = markdown_to_html(body) if row["kind"] == "md" else code_html(row["kind"], body)
-		self.send(200, page(title, back + rendered, nav(mode), row["path"]))
+		self.send(200, page(title, back + rendered, nav(mode), row["path"],
+							stamp=document_stamp(conn, row["id"]),
+							watch_url=f"/stamp/{row['id']}",
+							reload_href=f"/doc/{row['id']}"))
 
 	def raw(self, conn, path):
 		row = self.row(conn, path, "raw")
@@ -370,6 +436,19 @@ class Handler(BaseHTTPRequestHandler):
 		types = {"html": "text/html; charset=utf-8", "md": "text/markdown; charset=utf-8"}
 		self.send(200, body, types.get(row["kind"], "text/plain; charset=utf-8"))
 
+	def stamp(self, conn, path):
+		"""The stamp a page polls for: the whole shelf, or one document."""
+		tail = path[len("/stamp"):].strip("/")
+		if not tail:
+			self.send(200, json.dumps({"stamp": shelf_stamp(conn)}) + "\n", "application/json")
+			return
+		try:
+			book_id = int(tail)
+		except ValueError:
+			self.send(404, json.dumps({"error": "not an id"}) + "\n", "application/json")
+			return
+		self.send(200, json.dumps({"stamp": document_stamp(conn, book_id)}) + "\n", "application/json")
+
 	def health(self, conn):
 		documents, size = repo.stored_totals(conn)
 		payload = {
@@ -380,6 +459,7 @@ class Handler(BaseHTTPRequestHandler):
 			"bytes": size,
 			"last_walked": conn.execute("SELECT max(ingested_at) FROM content").fetchone()[0],
 			"modes": {name: len(repo.list_books(conn, kinds=m.kinds.values())) for name, m in MODES.items()},
+			"stamp": shelf_stamp(conn),
 		}
 		self.send(200, json.dumps(payload, indent=1) + "\n", "application/json")
 

@@ -8,7 +8,6 @@
 	t          book mode  <->  code mode
 	u          update -- re-walk the mounted folders and match the shelf to the disk
 	s          selected book: starred (important) on / off
-	f          show / hide the star
 	q          quit
 
 `t` picks the mode, and the mode picks what the list shows: `.md` and `.html` in book mode,
@@ -40,7 +39,7 @@ from textual.widgets._markdown import MarkdownFence
 import bookshelf_db as db
 import bookshelf_repo as repo
 from bookshelf_html import to_markdown
-from bookshelf_scan import EVERY_KIND, MODES, row_name
+from bookshelf_scan import EVERY_KIND, MODES, row_name, star_mark
 from bookshelf_screens import BookTree, MountScreen, Preview, UnmountScreen, find_node, force_line_rebuild
 from bookshelf_tree import children, plan
 
@@ -63,14 +62,6 @@ THEME = Theme(
 	success="#5F7A2E",
 )
 
-
-RING = "○"      # no
-FILL = "●"      # yes
-
-# On cream, Rich's "yellow" disappears. Both star styles are named explicitly: a dark
-# gold for yes, a muted warm grey for no.
-ON_STYLE = "#B8860B"
-OFF_STYLE = "#A89F85"
 
 # Must equal the `tab_size` handed to highlight() in CodeFence.highlight.
 TAB_SIZE = 8
@@ -182,7 +173,6 @@ class BookshelfApp(App):
 		Binding("m", "mount", "mount"),
 		Binding("n", "unmount", "unmount"),
 		Binding("u", "sync", "update"),
-		Binding("f", "toggle_stars", "star"),
 		Binding("s", "toggle_important", "starred"),
 		Binding("q", "quit", "quit"),
 	]
@@ -191,7 +181,6 @@ class BookshelfApp(App):
 		super().__init__()
 		self.db_path = str(db_path)
 		self.mode = MODES["book"]
-		self.stars_on = False
 		self.syncing = False         # a walk is running; set and cleared on the UI thread
 		self.rows = []
 		self.selected_id = None        # survives across reloads
@@ -218,12 +207,13 @@ class BookshelfApp(App):
 
 
 	def row_text(self, row):
-		"""One row as the list draws it, prefixed by the star sphere when `f` is on."""
-		name = row_name(row, self.mode)
-		if not self.stars_on:
-			return Text(name)
-		on = bool(row["is_important"])
-		return Text.assemble((FILL if on else RING, ON_STYLE if on else OFF_STYLE), " ", name)
+		"""One row as the list draws it, with its star in front -- filled, or an empty ring.
+
+		The mark is always drawn: it answers "have I read this", and a view that has to be
+		switched on to show it is a view you have to remember to switch on.
+		"""
+		glyph, colour = star_mark(row)
+		return Text.assemble((glyph, colour), " ", row_name(row, self.mode))
 
 	def reload(self) -> None:
 		"""Re-query and rebuild the tree for the current mode. The library is tiny.
@@ -279,7 +269,7 @@ class BookshelfApp(App):
 		selected = row_name(node.data, self.mode) if node and node.data else "-"
 		self.say(
 			f"{len(self.rows)} {self.mode.plural}  |  mode: {self.mode.name} ({self.mode.extensions})"
-			f"  |  stars: {'on' if self.stars_on else 'off'}  |  {selected}"
+			f"  |  {selected}"
 		)
 
 	def say(self, text) -> None:
@@ -358,10 +348,6 @@ class BookshelfApp(App):
 		self.selected_id = None
 		self.reload()
 		self.notify(f"{self.mode.name} mode -- m and n now take {self.mode.extensions}")
-
-	def action_toggle_stars(self) -> None:
-		self.stars_on = not self.stars_on
-		self.reload()
 
 	def action_inspect(self) -> None:
 		"""`i`: render the document, from the database.

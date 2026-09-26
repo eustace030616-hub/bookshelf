@@ -52,6 +52,22 @@ MODES = {
 }
 
 
+# The star mark, and its two colours. They live here rather than in a front end because both
+# front ends draw the same mark: a filled circle in dark gold for starred, an empty ring in
+# muted warm grey for not. The ring is drawn rather than left blank so a column of unstarred
+# rows still lines up, and so "not yet" is visible instead of implied.
+RING = "\u25cb"
+FILL = "\u25cf"
+ON_COLOUR = "#B8860B"
+OFF_COLOUR = "#A89F85"
+
+
+def star_mark(row):
+	"""One row's star as (glyph, colour). The same answer in the terminal and the browser."""
+	on = bool(row["is_important"])
+	return (FILL, ON_COLOUR) if on else (RING, OFF_COLOUR)
+
+
 def row_name(row, mode):
 	"""One row as a name, the way a reader of that mode expects to see it.
 
