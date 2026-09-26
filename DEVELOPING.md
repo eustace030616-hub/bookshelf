@@ -5,13 +5,13 @@ How the shelf is built, and why. What it does, and which key does what, is in
 
 ## Layout
 
-Twenty-two files and 4,148 lines. Two views of one data layer -- the terminal app and the
+Twenty-two files and 4,159 lines. Two views of one data layer -- the terminal app and the
 web front end -- and nothing below them knows either exists.
 
 ```
 bookshelf_tui.py         the app: modes, reload, keys          554
         │
-        ├── bookshelf_screens.py     the dialogs and the trees            1134
+        ├── bookshelf_screens.py     the dialogs and the trees            1145
         ├── bookshelf_web.py         the shelf over HTTP, GET only         696
         ├── bookshelf_export.py      the shelf as static files             107
         ├── bookshelf_publish.py     sync, then push the static shelf       50

@@ -71,6 +71,17 @@ class DirTree(DirectoryTree):
 		return [p for p in paths if p.is_dir() and not p.name.startswith(".")]
 
 
+class PickerTree(Tree):
+	"""A picker list built from rows rather than from the disk -- the unmount list.
+
+	A plain `Tree` answers to the arrow keys and not to `j`/`k`, which the mount picker got
+	for free from `DirTree`. The two screens should feel the same, so this carries the same
+	keys.
+	"""
+
+	BINDINGS = VIM_KEYS
+
+
 class Confirm(ModalScreen):
 	"""A yes/no guard. Dismisses True, or None when cancelled."""
 
@@ -1106,7 +1117,7 @@ class UnmountScreen(PickerScreen):
 		self.mode = mode
 
 	def make_tree(self):
-		return Tree("mounted folders", id="picker")
+		return PickerTree("mounted folders", id="picker")
 
 	def leaf_text(self, row):
 		return f"{row['label']}   ({row['n']} {self.mode.plural})"
