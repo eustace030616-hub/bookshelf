@@ -38,7 +38,6 @@ from textual.widgets._markdown import MarkdownFence
 
 import bookshelf_db as db
 import bookshelf_repo as repo
-from bookshelf_html import to_markdown
 from bookshelf_scan import EVERY_KIND, MODES, row_name, star_mark
 from bookshelf_screens import BookTree, MountScreen, Preview, UnmountScreen, find_node, force_line_rebuild
 from bookshelf_tree import children, plan
@@ -357,13 +356,15 @@ class BookshelfApp(App):
 		ingested yet (added before revision 5) is read from disk once and stored on the way
 		through, so the next `i` is a query and the next `u` costs nothing for it.
 
-		Markdown and code are text, so they are drawn as they are. HTML is markup, and the app
-		has no layout engine and no stylesheet, so the reading structure is lifted out of it --
-		headings, lists, tables, fenced code -- and shown in the same viewer. `Enter` hands the
-		file to the browser when the design itself is what you want to see.
+		Markdown and code are text, so they are drawn as they are. A converted page is not: it
+		is markup with a design, a terminal has no layout engine, and the browser is where a
+		page is read -- `Enter` hands it over.
 		"""
 		row = self.selected()
 		if row is None:
+			return
+		if row["kind"] == "html":
+			self.notify("a converted page -- Enter opens it in the browser")
 			return
 		with db.session(self.db_path) as conn:
 			body = repo.content_of(conn, row["id"])
@@ -376,9 +377,7 @@ class BookshelfApp(App):
 			notes = repo.notes_for(conn, row["id"])
 		if body is None:
 			return
-		if row["kind"] == "html":
-			body = to_markdown(body)
-		elif row["kind"] != "md":
+		if row["kind"] != "md":
 			# Code goes to the same viewer as Markdown, wrapped in one fence: inside a fence
 			# `#` stays a comment instead of becoming a heading, and the fence carries the
 			# language that colours it.

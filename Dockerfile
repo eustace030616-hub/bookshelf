@@ -29,7 +29,7 @@ WORKDIR /srv
 RUN pip install --no-cache-dir markdown-it-py pygments
 
 COPY bookshelf_db.py bookshelf_repo.py bookshelf_scan.py bookshelf_tree.py \
-     bookshelf_html.py bookshelf_web.py ./
+     bookshelf_annotate.py bookshelf_web.py ./
 
 EXPOSE 8080
 ENV PYTHONUNBUFFERED=1

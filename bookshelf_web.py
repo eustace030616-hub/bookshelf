@@ -34,7 +34,6 @@ from urllib.parse import urlparse, parse_qs
 
 import bookshelf_db as db
 import bookshelf_repo as repo
-from bookshelf_html import to_markdown
 from bookshelf_annotate import annotate
 from bookshelf_scan import MODES, OFF_COLOUR, ON_COLOUR, row_name, star_mark
 from bookshelf_tree import children, plan

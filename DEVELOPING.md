@@ -5,7 +5,7 @@ How the shelf is built, and why. What it does, and which key does what, is in
 
 ## Layout
 
-Twenty files and 4,109 lines. Two views of one data layer -- the terminal app and the
+Nineteen files and 3,887 lines. Two views of one data layer -- the terminal app and the
 web front end -- and nothing below them knows either exists.
 
 ```
@@ -17,7 +17,6 @@ bookshelf_tui.py         the app: modes, reload, keys          548
         │                            the served HTML
         ├── bookshelf_reading.py     the document as a model, and the      378
         │                            cursor over it
-        ├── bookshelf_html.py        HTML read as Markdown                 220
         ├── bookshelf_main.py        the `bookshelf` command               51
         │
         ├── bookshelf_repo.py        the verbs, the re-walk, the           368
@@ -310,7 +309,7 @@ curl -s localhost:8080/ | grep -c 'class="dot'
 
 # and inside the image that will run on a VPS: no Textual, no extra packages
 docker build -t bookshelf-web . && docker run --rm --entrypoint python3 bookshelf-web \
-  -c "import bookshelf_web, bookshelf_repo, bookshelf_tree, bookshelf_html"
+  -c "import bookshelf_web, bookshelf_repo, bookshelf_tree"
 
 # the read-only guarantee is a refusal, not a promise
 python3 -c "

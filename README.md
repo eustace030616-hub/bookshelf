@@ -31,7 +31,7 @@ The list is the main screen. Every key below acts on the highlighted row.
 |---|---|
 | `j` / `k` | move down and up. Arrow keys do the same |
 | `Enter` | open the file in the default application. On a folder, expand or collapse it |
-| `i` | inspect in the app: Markdown as Markdown, code and HTML as what a terminal can draw |
+| `i` | inspect in the app: Markdown as Markdown, code as a fence. A converted page says to press `Enter` |
 | `m` | mount a folder — browse the disk and add it as a root |
 | `n` | unmount a folder — pick a root and forget it |
 | `t` | switch between book mode and code mode |
@@ -231,18 +231,10 @@ emphasis -- and a reader needs to see at a glance which lines are theirs.
 The fence is sized to the file: one backtick more than the longest backtick run inside
 it, so a ``` in a Python docstring cannot end the block early.
 
-`i` on an HTML file shows it in the app too. The markup is rewritten into Markdown first —
-headings, paragraphs, lists, tables, fenced code — and that is what the viewer draws. There
-is no layout engine and no stylesheet in a terminal, so what arrives is a document's
-structure, not its design. `Enter` opens the same file in the browser when the design is
-what you want to see; that is the only HTML renderer a cell grid can reach.
-
-The rewrite is `bookshelf_html.py`: the standard library's HTML parser, one pass, offline,
-nothing to install. It drops the stylesheet, the page furniture, anchors and image
-contents, and keeps the shape. A code block keeps the language it declares, so a
-`language-java` block is coloured exactly as a file of that language would be; a block that
-declares nothing becomes `text`, which draws monochrome rather than letting a lexer guess at
-a diagram.
+A converted page is not drawn in the app. It is HTML with its own design, and a terminal has no
+layout engine and no stylesheet; a second renderer that lifted the structure out of the markup
+was one more thing to keep in step. So `i` says the row is a converted page and points at
+`Enter`, which hands the file to the browser — that is where a page is read.
 
 ## Command line
 
