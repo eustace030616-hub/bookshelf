@@ -5,18 +5,20 @@ How the shelf is built, and why. What it does, and which key does what, is in
 
 ## Layout
 
-Seventeen files and 2,530 lines. Two views of one data layer -- the terminal app and the
+Eighteen files and 2,849 lines. Two views of one data layer -- the terminal app and the
 web front end -- and nothing below them knows either exists.
 
 ```
-bookshelf_tui.py         the app: modes, reload, keys          522
+bookshelf_tui.py         the app: modes, reload, keys          529
         │
-        ├── bookshelf_screens.py     the dialogs and the trees             455
+        ├── bookshelf_screens.py     the dialogs and the trees             540
         ├── bookshelf_web.py         the shelf over HTTP, GET only         511
+        ├── bookshelf_reading.py     the document as a model, and the      202
+        │                            cursor over it
         ├── bookshelf_html.py        HTML read as Markdown                 220
         ├── bookshelf_main.py        the `bookshelf` command               51
         │
-        ├── bookshelf_repo.py        the verbs, the re-walk, the           292
+        ├── bookshelf_repo.py        the verbs, the re-walk, the           317
         │                            ingest
         ├── bookshelf_scan.py        the kinds, the modes, how a           95
         │                            row is named
@@ -56,6 +58,13 @@ bookshelf_tui.py         the app: modes, reload, keys          522
 │ the tree rules live once      directories before files, one entry per root, and
 │                               when the root level is drawn all come from
 │                               bookshelf_tree, which both renderers consume
+│ the reading model is separate   a rendered document is a tree of widgets, and a tree is a
+│                               poor place to keep a position. bookshelf_reading reads it once
+│                               into blocks, pieces and one string, so every position after
+│                               that is an offset -- the mark, the selection, what is stored.
+│                               Drawing re-derives each piece from the text it had plus the
+│                               styles asked for, which is what makes painting twice the same
+│                               as painting once
 │ one vocabulary for a row      the mode table, the row's name and its star mark live in
 │                               bookshelf_scan, so the terminal and the browser cannot
 │                               disagree about what a row is called or which colour its

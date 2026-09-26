@@ -372,6 +372,7 @@ class BookshelfApp(App):
 			# Taken, not read: a mark is spent by opening the document, so the jump happens
 			# once. Reading it here and passing it down keeps the database in the app.
 			mark = repo.take_mark(conn, row["id"])
+			underlines = repo.underlines_for(conn, row["id"])
 		if body is None:
 			return
 		if row["kind"] == "html":
@@ -383,7 +384,7 @@ class BookshelfApp(App):
 			body = fenced(body, LANGUAGES.get(row["kind"], row["kind"]))
 		self.push_screen(
 			Preview(f"{row['root_label']} / {row['path']}", body, book_id=row["id"],
-					jump=tuple(mark) if mark else None)
+					jump=tuple(mark) if mark else None, underlines=underlines)
 		)
 		if mark:
 			self.notify("opened at your mark -- it has now expired")
@@ -394,6 +395,12 @@ class BookshelfApp(App):
 			repo.set_mark(conn, message.book_id, message.anchor, message.position)
 		where = message.anchor[:40] or f"row {message.position}"
 		self.notify(f"marked at {where!r} -- one jump, then it expires")
+
+	def on_preview_underlined(self, message: Preview.Underlined) -> None:
+		"""The reader underlined a range: keep it, anchored to the words it covers."""
+		with db.session(self.db_path) as conn:
+			repo.add_underline(conn, message.book_id, message.position, message.span, message.anchor)
+		self.notify(f"underlined {len(message.anchor)} character(s)")
 
 	def read_and_store(self, conn, row):
 		"""Read one row's file and store it, for a row that predates the content table."""

@@ -251,6 +251,31 @@ def take_mark(conn, book_id):
 	return row
 
 
+def add_underline(conn, book_id, position, span, anchor):
+	"""Underline a range: where it starts, how long it is, and what it covered.
+
+	Many per document, unlike a mark, so there is no delete first. The anchor is the text
+	under the line, which is what puts it back on the right sentence after the file is re-read.
+	"""
+	conn.execute(
+		"INSERT INTO annotation (book_id, kind, anchor, position, span) "
+		"VALUES (?, 'underline', ?, ?, ?)",
+		(book_id, anchor, position, span),
+	)
+
+
+def underlines_for(conn, book_id):
+	"""Every underline on one document, oldest first: (position, span, anchor)."""
+	return [
+		(row["position"], row["span"], row["anchor"])
+		for row in conn.execute(
+			"SELECT position, span, anchor FROM annotation "
+			"WHERE book_id = ? AND kind = 'underline' ORDER BY position",
+			(book_id,),
+		)
+	]
+
+
 # ---------------------------------------------------------------------- list
 
 # ORDER BY cannot take a ? placeholder: a placeholder substitutes a *value*, and a column

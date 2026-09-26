@@ -43,8 +43,9 @@ The list is the main screen. Every key below acts on the highlighted row.
 guard confirms with `Enter` or with the key that opened it -- `m` for a mount, `n` for an
 unmount -- so one line of hint names every key that works.
 
-The preview answers to its own keys, and `m` is not `m` there: `j`/`k` scroll, `m` marks a
-place, `q` closes. Below the list, the key means what the screen needs it to mean.
+The preview answers to its own keys: `j`/`k` scroll (or move the selection while one is
+open), `m` marks a place, `a` underlines a range, `q` closes. `m` there is a mark, not a
+mount -- below the list, a key means what the screen needs it to mean.
 
 ## Modes
 
@@ -180,6 +181,13 @@ block you marked, and the mark is spent by being used — one jump, then it is g
 `m` again replaces it, because a reader has one place they put the book down, not a history
 of them. The mark is found by the text it was set on, so it survives the document being
 re-read; the row it was on is only a fallback.
+
+`a` underlines a range. It starts a selection where you are looking, `h`/`l` move it a
+character at a time, `j`/`k` move it a block at a time -- the same `j`/`k` that scroll while
+you are only reading, which is what the key means in the mode it is in -- and a second `a`
+underline everything between the two ends. The range is stored with the text it covers, so it
+comes back on the same sentence after the file is re-read; a range whose words are gone is
+dropped rather than drawn in the wrong place.
 
 The fence is sized to the file: one backtick more than the longest backtick run inside
 it, so a ``` in a Python docstring cannot end the block early.

@@ -18,6 +18,7 @@ from textual import events
 from textual.app import ComposeResult
 from textual.binding import Binding
 from textual.containers import Vertical
+from bookshelf_reading import Document
 from textual.message import Message
 from textual.screen import ModalScreen
 from textual.widgets import DirectoryTree, Footer, MarkdownViewer, Static, Tree
@@ -127,32 +128,16 @@ class Confirm(ModalScreen):
 			self.dismiss(None)
 
 
-def block_text(block):
-	"""A block's text, its subtree included, whitespace collapsed to single spaces.
-
-	The text is never where you would first look. Prose holds Content; a bullet list is an
-	empty string with item children; a table is an empty string with cell widgets that hold
-	it; a fence is an empty string too, and its code lives in a Label it composes. So every
-	descendant is asked, whatever kind of widget it is, and a mark remembers what was on
-	screen rather than what a block class happens to expose.
-	"""
-	parts = []
-	for node in block.walk_children(with_self=True):
-		content = getattr(node, "content", None)
-		if isinstance(content, str):
-			text = content
-		else:
-			text = getattr(content, "plain", "") or ""
-		if text.strip():
-			parts.append(" ".join(text.split()))
-	return " ".join(parts)
-
-
 class Preview(ModalScreen):
 	"""A text file rendered inside the TUI. `q` closes it, and nothing else does.
 
 	Escape deliberately does not leave: this screen is a reading surface, the footer names
 	the one key that exits, and the app's other dialogs still answer to Escape as they should.
+
+	Three things live here beyond drawing the page. A mark (`m`) leaves one place to come back
+	to. A selection (`a`, then h/l by character and j/k by block) underlines a range. Both are
+	positions in `bookshelf_reading.Document`, and neither is stored here -- the screen reports
+	them and the app writes them, because the app owns the database.
 
 	Markdown arrives as itself; code arrives already wrapped in a fence by the app, which
 	is what keeps `# a comment` a comment instead of a heading.
@@ -161,6 +146,9 @@ class Preview(ModalScreen):
 	BINDINGS = [
 		Binding("q", "close_preview", "close"),
 		Binding("m", "mark", "mark"),
+		Binding("a", "select", "select"),
+		Binding("h", "cursor_left", "left", show=False),
+		Binding("l", "cursor_right", "right", show=False),
 		Binding("j", "preview_down", "down", show=False),
 		Binding("k", "preview_up", "up", show=False),
 	]
@@ -175,12 +163,28 @@ class Preview(ModalScreen):
 			self.anchor = anchor
 			self.position = position
 
-	def __init__(self, heading, body, book_id=None, jump=None):
+	class Underlined(Message):
+		"""`a` was pressed twice: underline this range, and remember it."""
+
+		def __init__(self, book_id, position, span, anchor):
+			super().__init__()
+			self.book_id = book_id
+			self.position = position
+			self.span = span
+			self.anchor = anchor
+
+	def __init__(self, heading, body, book_id=None, jump=None, underlines=()):
 		super().__init__()
 		self.heading = heading
 		self.body = body
 		self.book_id = book_id
-		self.jump = jump          # a mark to open at: (anchor, position) or None
+		self.jump = jump                      # a mark to open at: (anchor, position) or None
+		self.stored = list(underlines)        # (position, span, anchor) rows from the database
+		self.document = None                  # built once the blocks have been laid out
+		self.selecting = False
+		self.anchor_offset = 0
+		self.cursor_offset = 0
+		self.underlines = []                  # what to draw: (start, span, anchor)
 
 	def compose(self) -> ComposeResult:
 		yield Static(self.heading, id="preview-title")
@@ -188,40 +192,70 @@ class Preview(ModalScreen):
 		yield Footer()
 
 	def on_mount(self) -> None:
-		viewer = self.query_one(MarkdownViewer)
-		viewer.focus()
-		if self.jump:
-			# Not here: a screen's on_mount runs before its children have built, so the blocks
-			# a jump needs do not exist yet. Wait for them.
-			self.call_after_refresh(self.try_jump)
+		self.query_one(MarkdownViewer).focus()
+		# Not here: a screen's on_mount runs before its children have built, so neither the
+		# document nor the block a jump needs exists yet. Wait for them.
+		self.call_after_refresh(self.build)
 
-	def blocks(self):
-		"""The top-level blocks that carry text, in reading order.
+	# ------------------------------------------------------------------ the model
 
-		Top-level, because a position in this view is measured against the document: a nested
-		block's coordinates are relative to its parent, and only these sit on the container's
-		own axis. Text, because a mark wants the words on screen.
+	def build(self, tries=0):
+		"""Read the rendered tree into a document, draw it, and take a jump if there is one.
+
+		Retrying on the refresh is deterministic where a timer is: it happens on the first
+		layout that produced blocks. A document that renders nothing gives up after twenty
+		tries rather than looping.
 		"""
 		markdown = next(iter(self.query("Markdown")), None)
+		if (markdown is None or not markdown.children) and tries < 20:
+			self.call_after_refresh(self.build, tries + 1)
+			return
 		if markdown is None:
-			return []
-		return [child for child in markdown.children if block_text(child)]
+			return
+		self.document = Document(markdown)
+		self.resolve_underlines()
+		self.paint()
+		if self.jump:
+			anchor, position = self.jump
+			self.jump = None
+			self.open_at(anchor, position)
 
-	def try_jump(self, tries=0):
-		"""Jump once the document has blocks, waiting a refresh at a time until it does.
+	def resolve_underlines(self):
+		"""Put stored ranges back where they belong, by the text they covered.
 
-		Retrying on the refresh is deterministic where a timer is: the jump happens on the
-		first layout that produced a document. A document that renders nothing gives up
-		after twenty tries rather than looping.
+		The offsets are a snapshot of the document text; if the file has been re-read since and
+		the words moved, the anchor is what puts the underline back on the sentence a reader
+		marked. A range whose text is gone is dropped rather than drawn in the wrong place.
 		"""
-		if not self.jump:
+		self.underlines = []
+		for position, span, anchor in self.stored:
+			if self.document.text[position:position + span] == anchor:
+				self.underlines.append((position, span, anchor))
+				continue
+			found = self.document.find(anchor)
+			if found >= 0:
+				self.underlines.append((found, span, anchor))
+
+	def paint(self):
+		"""Draw the document with the cursor and the selection it currently has."""
+		if self.document is None:
 			return
-		if not self.blocks() and tries < 20:
-			self.call_after_refresh(self.try_jump, tries + 1)
-			return
-		anchor, position = self.jump
-		self.jump = None
-		self.open_at(anchor, position)
+		ranges = [(start, start + span) for start, span, _ in self.underlines]
+		if self.selecting:
+			ranges.append((self.anchor_offset, self.cursor_offset))
+		self.document.paint(cursor=self.cursor_offset if self.selecting else None, ranges=ranges)
+
+	def top_offset(self):
+		"""The offset of the first block on screen: where a selection starts from."""
+		if not self.document or not self.document.blocks:
+			return 0
+		top = self.query_one(MarkdownViewer).scroll_offset.y
+		for block in self.document.blocks:
+			# virtual_region, not region: a block scrolled off the top has a negative screen
+			# row, and the scroll offset this is compared against lives in content space
+			if block.widget.virtual_region.y + block.widget.virtual_region.height > top:
+				return block.start
+		return self.document.blocks[-1].start
 
 	def anchor_at_top(self):
 		"""The text of the block at the top of the view, and the row it sits on.
@@ -230,40 +264,91 @@ class Preview(ModalScreen):
 		changes, the text is right as long as those words are still there, and the text is
 		what is looked up first.
 		"""
-		viewer = self.query_one(MarkdownViewer)
-		top = viewer.scroll_offset.y
-		for block in self.blocks():
-			# virtual_region, not region: a block scrolled off the top has a negative screen
-			# row, and the scroll offset this is compared against lives in content space
-			y, height = block.virtual_region.y, block.virtual_region.height
-			if y + height > top:
-				return block_text(block)[:80], int(top)
-		return "", int(top)
+		offset = self.top_offset()
+		block = self.document.block_at(offset) if self.document else None
+		return (block.text[:80] if block else ""), int(self.query_one(MarkdownViewer).scroll_offset.y)
 
 	def open_at(self, anchor, position):
 		"""Scroll to a remembered mark: by its text when that text is still there."""
 		viewer = self.query_one(MarkdownViewer)
-		if anchor:
-			for block in self.blocks():
-				if anchor[:40] in block_text(block):
-					viewer.scroll_to(y=block.virtual_region.y, animate=False)
+		if self.document and anchor:
+			for block in self.document.blocks:
+				if anchor[:40] in block.text:
+					viewer.scroll_to(y=block.widget.virtual_region.y, animate=False)
 					return
 		viewer.scroll_to(y=position, animate=False)
+
+	# ------------------------------------------------------------------ the keys
 
 	def action_mark(self) -> None:
 		"""`m`: leave a mark here. One per document, and it expires when it is used."""
 		anchor, position = self.anchor_at_top()
 		self.post_message(self.Marked(self.book_id, anchor, position))
 
+	def action_select(self) -> None:
+		"""`a`: start a selection at the cursor, and the next `a` underlines it.
+
+		In reading mode the cursor is wherever the reader is looking -- the top of the view --
+		so the first press anchors there, the movement keys take over, and the second press
+		hands the range to the app.
+		"""
+		if self.document is None:
+			return
+		if not self.selecting:
+			self.selecting = True
+			self.cursor_offset = self.top_offset()
+			self.anchor_offset = self.cursor_offset
+			self.paint()
+			self.notify("selecting: h/l by character, j/k by block, a to underline")
+			return
+		start, end = sorted((self.anchor_offset, self.cursor_offset))
+		if end - start < 1:
+			self.notify("nothing to underline yet -- move the cursor first", severity="warning")
+			return
+		text = self.document.text[start:end]
+		self.selecting = False
+		self.underlines.append((start, end - start, text))
+		self.paint()
+		self.post_message(self.Underlined(self.book_id, start, end - start, text))
+
+	def move_cursor(self, offset) -> None:
+		"""Move the cursor, and keep the block it is in on screen."""
+		self.cursor_offset = offset
+		block = self.document.block_at(offset)
+		if block is not None:
+			self.query_one(MarkdownViewer).scroll_to(y=block.widget.virtual_region.y, animate=False)
+		self.paint()
+
+	def action_cursor_left(self) -> None:
+		"""`h`: back a character, while selecting."""
+		if self.selecting:
+			self.move_cursor(self.document.move_h(self.cursor_offset))
+		else:
+			self.notify("press a to start selecting")
+
+	def action_cursor_right(self) -> None:
+		"""`l`: on a character, while selecting."""
+		if self.selecting:
+			self.move_cursor(self.document.move_l(self.cursor_offset))
+		else:
+			self.notify("press a to start selecting")
+
 	def action_close_preview(self) -> None:
 		self.dismiss()
 
-	# MarkdownViewer scrolls one row with the arrow keys; j/k jump PREVIEW_SCROLL rows.
-	# scroll_relative measures y in rows, and animate=False keeps the jump instant.
+	# MarkdownViewer scrolls one row with the arrow keys; j/k jump PREVIEW_SCROLL rows -- or
+	# move the cursor a block at a time while a selection is open, which is what the same key
+	# means in the mode it is in.
 	def action_preview_down(self) -> None:
+		if self.selecting:
+			self.move_cursor(self.document.move_j(self.cursor_offset))
+			return
 		self.query_one(MarkdownViewer).scroll_relative(y=PREVIEW_SCROLL, animate=False)
 
 	def action_preview_up(self) -> None:
+		if self.selecting:
+			self.move_cursor(self.document.move_k(self.cursor_offset))
+			return
 		self.query_one(MarkdownViewer).scroll_relative(y=-PREVIEW_SCROLL, animate=False)
 
 
