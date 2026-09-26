@@ -5,14 +5,15 @@ How the shelf is built, and why. What it does, and which key does what, is in
 
 ## Layout
 
-Twenty files and 3,974 lines. Two views of one data layer -- the terminal app and the
+Twenty-one files and 4,086 lines. Two views of one data layer -- the terminal app and the
 web front end -- and nothing below them knows either exists.
 
 ```
 bookshelf_tui.py         the app: modes, reload, keys          542
         │
         ├── bookshelf_screens.py     the dialogs and the trees            1134
-        ├── bookshelf_web.py         the shelf over HTTP, GET only         691
+        ├── bookshelf_web.py         the shelf over HTTP, GET only         696
+        ├── bookshelf_export.py      the shelf as static files             107
         ├── bookshelf_annotate.py    a reader's marks put back into        221
         │                            the served HTML
         ├── bookshelf_reading.py     the document as a model, and the      378
@@ -262,6 +263,10 @@ than in production.
 │ no path traversal is not a policy here, it is the absence of a feature
 │ one rendering   Markdown and code are wrapped in this server's own page, using the app's
 │             palette. There is no second page type: the shelf holds no HTML of its own
+│ a third consumer, statically   bookshelf_export.py renders the same shell to files: the same
+│             annotate, the same panel and scripts, relative links, and no watcher because there
+│             is no server to ask. A static host has no process to attack and no machine to keep
+│             awake, which is the trade for having no token either
 │ the document's controls float   `note` and `shelf` are two dropdowns in a rounded panel fixed
 │             at the bottom of a document, not in the header: a thumb reaches it without a trip
 │             to the top, and it is draggable so it can be moved off the words. Released, it is

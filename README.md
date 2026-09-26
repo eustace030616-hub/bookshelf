@@ -292,7 +292,8 @@ server has no write route at all.
 
 The page carries the reader's own marks: a highlight is a wash behind the words it covered, and
 a note is a callout above the block it was written on. Neither is written from the browser --
-the rows are read and drawn, which is the whole point of the read-only server. A document's own
+the rows are read and drawn, which is the whole point of the read-only server.
+
 A document's own controls -- a `note` menu of its notes and a `shelf` dropdown of the whole
 shelf -- sit in a rounded panel fixed at the bottom of the screen, so a thumb reaches them
 without a trip to the top, and draggable so they can be moved off whatever they cover; released,
@@ -308,6 +309,23 @@ on the shelf page, which keeps its header.
 | your marks | highlights and notes, drawn in the viewer | the same highlights and notes on the page, read-only |
 | writing | mount, unmount, `u`, `s` | nothing |
 | gestures | the key tables above | links, scroll, back-swipe |
+
+## A static copy
+
+The server needs a machine to run on. A second way to read the shelf is to render it to plain
+files and put them on any static host, so it stays readable with every machine off and nothing
+to keep alive:
+
+```
+python3 bookshelf_export.py --db shelf.db site/
+```
+
+That writes `index.html` and one `doc-<id>.html` per document: the same panel, the same two
+dropdowns, the annotations already baked in, and links relative enough to work under any URL.
+On GitHub, put the folder in a repository and turn Pages on (Settings → Pages → deploy from a
+branch); the shelf is then public at `https://<user>.github.io/<repo>/`. A static shelf has no
+server and no token, because it is public by construction -- that is the trade for having
+nothing to run.
 
 ## What it does not do
 

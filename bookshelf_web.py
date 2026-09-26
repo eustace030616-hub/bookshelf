@@ -191,13 +191,18 @@ def notes_nav(count):
 	        '<option value="">note</option></select>')
 
 
-def shelf_picker(conn):
+def doc_href(row):
+	"""Where a row's page lives in the served site. The static export replaces it with a file."""
+	return f"/doc/{row['id']}"
+
+
+def shelf_picker(conn, href=doc_href):
 	"""The whole shelf as one dropdown, grouped by mode: the tree, folded for a phone.
 
 	A phone has no room for the tree and no keyboard for a path, so this is one control that
-	jumps anywhere -- a chapter, or `.py` down in code mode -- and gives the mark button a way
-	back. The leading `shelf` option is selected so the control reads as a button, not as the
-	name of the document it is already on.
+	jumps anywhere -- a chapter, or `.py` down in code mode. The leading `shelf` option is
+	selected so the control reads as a button, not as the name of the document it is on. `href`
+	is where each row points: a route on the server, a file name in the static export.
 	"""
 	rows = repo.list_books(conn)
 	groups = {name: [] for name in MODES}
@@ -211,7 +216,7 @@ def shelf_picker(conn):
 			continue
 		parts.append(f'<optgroup label="{html.escape(mode.plural.title())}">')
 		for row in sorted(groups[name], key=lambda r: row_name(r, mode).casefold()):
-			parts.append(f'<option value="/doc/{row["id"]}">{html.escape(row_name(row, mode))}</option>')
+			parts.append(f'<option value="{href(row)}">{html.escape(row_name(row, mode))}</option>')
 		parts.append("</optgroup>")
 	parts.append("</select>")
 	return "".join(parts)
@@ -331,21 +336,21 @@ PANEL_SCRIPT = """<script>
 </script>"""
 
 
-def tree_html(subtree, mode):
+def tree_html(subtree, mode, href=doc_href):
 	"""The shared tree shape as a nested list -- the same order the terminal app draws."""
 	items = []
 	for name, value, is_dir in children(subtree):
 		if is_dir:
 			items.append(
 				f'<li class="folder"><span>{html.escape(name)}/</span>'
-				f"<ul>{tree_html(value, mode)}</ul></li>"
+				f"<ul>{tree_html(value, mode, href)}</ul></li>"
 			)
 			continue
 		row = value
 		glyph, _ = star_mark(row)
 		state = "on" if row["is_important"] else "off"
 		items.append(
-			f'<li class="file"><a href="/doc/{row["id"]}">'
+			f'<li class="file"><a href="{href(row)}">'
 			f'<span class="dot {state}">{glyph}</span> {html.escape(row_name(row, mode))}</a></li>'
 		)
 	return "".join(items)
