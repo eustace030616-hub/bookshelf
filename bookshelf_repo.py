@@ -251,26 +251,26 @@ def take_mark(conn, book_id):
 	return row
 
 
-def add_underline(conn, book_id, position, span, anchor):
-	"""Underline a range: where it starts, how long it is, and what it covered.
+def add_highlight(conn, book_id, position, span, anchor):
+	"""Mark a range: where it starts, how long it is, and the words it covers.
 
 	Many per document, unlike a mark, so there is no delete first. The anchor is the text
-	under the line, which is what puts it back on the right sentence after the file is re-read.
+	under the wash, which is what puts it back on the right sentence after the file is re-read.
 	"""
 	conn.execute(
 		"INSERT INTO annotation (book_id, kind, anchor, position, span) "
-		"VALUES (?, 'underline', ?, ?, ?)",
+		"VALUES (?, 'highlight', ?, ?, ?)",
 		(book_id, anchor, position, span),
 	)
 
 
-def underlines_for(conn, book_id):
-	"""Every underline on one document, oldest first: (position, span, anchor)."""
+def highlights_for(conn, book_id):
+	"""Every marked range on one document, in reading order: (position, span, anchor)."""
 	return [
 		(row["position"], row["span"], row["anchor"])
 		for row in conn.execute(
 			"SELECT position, span, anchor FROM annotation "
-			"WHERE book_id = ? AND kind = 'underline' ORDER BY position",
+			"WHERE book_id = ? AND kind = 'highlight' ORDER BY position",
 			(book_id,),
 		)
 	]

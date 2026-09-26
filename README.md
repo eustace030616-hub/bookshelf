@@ -182,12 +182,17 @@ block you marked, and the mark is spent by being used — one jump, then it is g
 of them. The mark is found by the text it was set on, so it survives the document being
 re-read; the row it was on is only a fallback.
 
-`a` underlines a range. It starts a selection where you are looking, `h`/`l` move it a
-character at a time, `j`/`k` move it a block at a time -- the same `j`/`k` that scroll while
-you are only reading, which is what the key means in the mode it is in -- and a second `a`
-underline everything between the two ends. The range is stored with the text it covers, so it
-comes back on the same sentence after the file is re-read; a range whose words are gone is
-dropped rather than drawn in the wrong place.
+`a` marks a range with a warm wash behind the words. The cursor appears where you are
+looking -- the middle of the screen, not the top, which you have already read past -- `h`/`l`
+move it a character at a time, `j`/`k` move it a block at a time (the same `j`/`k` that scroll
+while you are only reading, which is what the key means in the mode it is in), and a second
+`a` marks everything between the two ends. `q` drops a selection you have changed your mind
+about, and only closes the document when there is none.
+
+The range is stored with the text it covers, so it comes back on the same sentence after the
+file is re-read; a range whose words are gone is dropped rather than drawn in the wrong place.
+It is a highlight rather than an underline because underline is a Markdown thing -- links and
+emphasis -- and a reader needs to see at a glance which lines are theirs.
 
 The fence is sized to the file: one backtick more than the longest backtick run inside
 it, so a ``` in a Python docstring cannot end the block early.

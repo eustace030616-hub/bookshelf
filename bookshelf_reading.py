@@ -17,14 +17,27 @@ tested as arithmetic.
 from dataclasses import dataclass, field
 from typing import Any
 
+from textual.color import Color
 from textual.content import Content
 from textual.style import Style
 
 # The character under the cursor, and the range a reader has selected. Both are styles rather
 # than widgets: a span is what a `Content` can carry, and the app already draws everything else
 # that way.
+#
+# The selection is a highlight, not an underline. Underline is a Markdown thing -- a link, a
+# run of emphasis -- so drawing it over a range tells a reader nothing about which lines are
+# theirs, and it is close to invisible on serif text at this size. A warm wash behind the words
+# reads as a marker, and it is what a marked-up page looks like.
+#
+# Measured on the wash: body ink 8.8:1, and the worst of the five code colours 3.9:1, against
+# 4.8:1 on bare cream. The range is a selection rather than body text, so the drop is the price
+# of being able to see it at all -- and it lasts as long as the selection is on screen.
 CURSOR = Style(reverse=True)
-SELECTED = Style(underline=True)
+# The colours are Color objects, not strings: Textual's Style keeps a string it was handed
+# as a string, and combining that with the parsed styles a fence already carries raises
+# `Color + str` deep inside its renderer. Color.parse is what makes the style fully parsed.
+SELECTED = Style(background=Color.parse("#F0E2B8"))
 BLOCK_SEPARATOR = "\n"
 PIECE_SEPARATOR = " "
 

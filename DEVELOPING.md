@@ -5,15 +5,15 @@ How the shelf is built, and why. What it does, and which key does what, is in
 
 ## Layout
 
-Eighteen files and 2,849 lines. Two views of one data layer -- the terminal app and the
+Nineteen files and 2,926 lines. Two views of one data layer -- the terminal app and the
 web front end -- and nothing below them knows either exists.
 
 ```
 bookshelf_tui.py         the app: modes, reload, keys          529
         │
-        ├── bookshelf_screens.py     the dialogs and the trees             540
+        ├── bookshelf_screens.py     the dialogs and the trees             564
         ├── bookshelf_web.py         the shelf over HTTP, GET only         511
-        ├── bookshelf_reading.py     the document as a model, and the      202
+        ├── bookshelf_reading.py     the document as a model, and the      215
         │                            cursor over it
         ├── bookshelf_html.py        HTML read as Markdown                 220
         ├── bookshelf_main.py        the `bookshelf` command               51
@@ -24,7 +24,7 @@ bookshelf_tui.py         the app: modes, reload, keys          529
         │                            row is named
         ├── bookshelf_tree.py        the shape a tree view needs           48
         │
-        └── bookshelf_db.py          connections and revisions,            72
+        └── bookshelf_db.py          connections and revisions,            73
         │                            one of which cannot write
         │
         bookshelf_schema.sql     the contract, revision 1              33
@@ -33,6 +33,7 @@ bookshelf_tui.py         the app: modes, reload, keys          529
         bookshelf_schema_v4.sql  end of the pdf rows                   16
         bookshelf_schema_v5.sql  the documents themselves              38
         bookshelf_schema_v6.sql  a reader's annotations                38
+        bookshelf_schema_v7.sql  a marked range is a highlight         39
         bookshelf.tcss           every rule the app draws with         25
         Dockerfile               the server, without a UI              39
                     │
@@ -58,6 +59,10 @@ bookshelf_tui.py         the app: modes, reload, keys          529
 │ the tree rules live once      directories before files, one entry per root, and
 │                               when the root level is drawn all come from
 │                               bookshelf_tree, which both renderers consume
+│ Textual keeps a colour string as a string   `Style(background="#F0E2B8")` is not parsed, and
+│                               combining it with the parsed styles a code fence already carries
+│                               raises `Color + str` deep inside the renderer. Pass Color.parse
+│                               and the style is fully parsed, which is what the highlight does
 │ the reading model is separate   a rendered document is a tree of widgets, and a tree is a
 │                               poor place to keep a position. bookshelf_reading reads it once
 │                               into blocks, pieces and one string, so every position after
@@ -76,7 +81,7 @@ bookshelf_tui.py         the app: modes, reload, keys          529
 
 Four tables: `bookshelf_schema.sql` for the first two, then one script per revision --
 `v2` the code kinds, `v3` the html kind, `v4` the end of the pdf rows, `v5` the documents
-themselves, `v6` what a reader says about them.
+themselves, `v6` what a reader says about them, `v7` the range a reader marks.
 
 ```
 roots              one row per mounted folder. `path` is the only absolute path
@@ -85,8 +90,9 @@ books              one row per file: root_id, relative path, title, kind,
                    star, added_at
 content            one row per file that has been read: the text itself, its size,
                    and the size and mtime of the file it came from
-annotation         one row per thing a reader says about a document: a mark for now,
-                   an underline or a note later. kind, anchor, position, span, note
+annotation         one row per thing a reader says about a document: a mark, a
+                   highlighted range, and later a note. kind, anchor, position,
+                   span, note
 ```
 
 | Column | Values |
@@ -104,8 +110,8 @@ annotation         one row per thing a reader says about a document: a mark for 
 │               file takes its body with it (ON DELETE CASCADE)
 │ annotations are not content   a note survives a `u` because it is not in the file: the
 │               folder is re-walked, `content` is rewritten, and `annotation` is untouched
-│ one table, three features   a mark is a position, an underline is a range, a note is a
-│               range with words. `anchor` holds the text it is attached to, so it can be
+│ one table, three features   a mark is a position, a highlighted range is a range, a note
+│               is a range with words. `anchor` holds the text it is attached to, so it can be
 │               found again after a re-render -- a row or an offset alone does not survive
 │               an edit upstream
 │ staleness     `source_size` and `source_mtime` are what make `u` cheap -- it reads

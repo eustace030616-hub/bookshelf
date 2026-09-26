@@ -163,8 +163,8 @@ class Preview(ModalScreen):
 			self.anchor = anchor
 			self.position = position
 
-	class Underlined(Message):
-		"""`a` was pressed twice: underline this range, and remember it."""
+	class Highlighted(Message):
+		"""`a` was pressed twice: mark this range, and remember it."""
 
 		def __init__(self, book_id, position, span, anchor):
 			super().__init__()
@@ -173,18 +173,18 @@ class Preview(ModalScreen):
 			self.span = span
 			self.anchor = anchor
 
-	def __init__(self, heading, body, book_id=None, jump=None, underlines=()):
+	def __init__(self, heading, body, book_id=None, jump=None, highlights=()):
 		super().__init__()
 		self.heading = heading
 		self.body = body
 		self.book_id = book_id
 		self.jump = jump                      # a mark to open at: (anchor, position) or None
-		self.stored = list(underlines)        # (position, span, anchor) rows from the database
+		self.stored = list(highlights)        # (position, span, anchor) rows from the database
 		self.document = None                  # built once the blocks have been laid out
 		self.selecting = False
 		self.anchor_offset = 0
 		self.cursor_offset = 0
-		self.underlines = []                  # what to draw: (start, span, anchor)
+		self.highlights = []                  # what to draw: (start, span, anchor)
 
 	def compose(self) -> ComposeResult:
 		yield Static(self.heading, id="preview-title")
@@ -213,47 +213,61 @@ class Preview(ModalScreen):
 		if markdown is None:
 			return
 		self.document = Document(markdown)
-		self.resolve_underlines()
+		self.resolve_highlights()
 		self.paint()
 		if self.jump:
 			anchor, position = self.jump
 			self.jump = None
 			self.open_at(anchor, position)
 
-	def resolve_underlines(self):
+	def resolve_highlights(self):
 		"""Put stored ranges back where they belong, by the text they covered.
 
 		The offsets are a snapshot of the document text; if the file has been re-read since and
 		the words moved, the anchor is what puts the underline back on the sentence a reader
 		marked. A range whose text is gone is dropped rather than drawn in the wrong place.
 		"""
-		self.underlines = []
+		self.highlights = []
 		for position, span, anchor in self.stored:
 			if self.document.text[position:position + span] == anchor:
-				self.underlines.append((position, span, anchor))
+				self.highlights.append((position, span, anchor))
 				continue
 			found = self.document.find(anchor)
 			if found >= 0:
-				self.underlines.append((found, span, anchor))
+				self.highlights.append((found, span, anchor))
 
 	def paint(self):
 		"""Draw the document with the cursor and the selection it currently has."""
 		if self.document is None:
 			return
-		ranges = [(start, start + span) for start, span, _ in self.underlines]
+		ranges = [(start, start + span) for start, span, _ in self.highlights]
 		if self.selecting:
 			ranges.append((self.anchor_offset, self.cursor_offset))
 		self.document.paint(cursor=self.cursor_offset if self.selecting else None, ranges=ranges)
 
 	def top_offset(self):
-		"""The offset of the first block on screen: where a selection starts from."""
+		"""The offset of the first block on screen."""
+		return self.visible_offset(self.query_one(MarkdownViewer).scroll_offset.y)
+
+	def centre_offset(self):
+		"""The offset of the block nearest the middle of the screen: where the eye is.
+
+		Not the top of the view. A reader scrolls until the passage they want is in front of
+		them, and the top of the screen is by then something they have already read past --
+		so a selection that starts there starts in the wrong place.
+		"""
+		viewer = self.query_one(MarkdownViewer)
+		return self.visible_offset(viewer.scroll_offset.y + viewer.size.height // 2)
+
+	def visible_offset(self, row):
+		"""The first block at or below a row, in content-space rows."""
 		if not self.document or not self.document.blocks:
 			return 0
-		top = self.query_one(MarkdownViewer).scroll_offset.y
 		for block in self.document.blocks:
 			# virtual_region, not region: a block scrolled off the top has a negative screen
 			# row, and the scroll offset this is compared against lives in content space
-			if block.widget.virtual_region.y + block.widget.virtual_region.height > top:
+			region = block.widget.virtual_region
+			if region.y + region.height > row:
 				return block.start
 		return self.document.blocks[-1].start
 
@@ -296,20 +310,20 @@ class Preview(ModalScreen):
 			return
 		if not self.selecting:
 			self.selecting = True
-			self.cursor_offset = self.top_offset()
+			self.cursor_offset = self.centre_offset()
 			self.anchor_offset = self.cursor_offset
 			self.paint()
-			self.notify("selecting: h/l by character, j/k by block, a to underline")
+			self.notify("selecting: h/l by character, j/k by block, a to mark it, q to drop it")
 			return
 		start, end = sorted((self.anchor_offset, self.cursor_offset))
 		if end - start < 1:
-			self.notify("nothing to underline yet -- move the cursor first", severity="warning")
+			self.notify("nothing to mark yet -- move the cursor first", severity="warning")
 			return
 		text = self.document.text[start:end]
 		self.selecting = False
-		self.underlines.append((start, end - start, text))
+		self.highlights.append((start, end - start, text))
 		self.paint()
-		self.post_message(self.Underlined(self.book_id, start, end - start, text))
+		self.post_message(self.Highlighted(self.book_id, start, end - start, text))
 
 	def move_cursor(self, offset) -> None:
 		"""Move the cursor, and keep the block it is in on screen."""
@@ -334,6 +348,16 @@ class Preview(ModalScreen):
 			self.notify("press a to start selecting")
 
 	def action_close_preview(self) -> None:
+		"""`q`: drop a selection if one is open, otherwise leave.
+
+		The same key backs out of both, so a reader is never stuck holding a selection they
+		cannot put down without closing the document.
+		"""
+		if self.selecting:
+			self.selecting = False
+			self.paint()
+			self.notify("selection dropped")
+			return
 		self.dismiss()
 
 	# MarkdownViewer scrolls one row with the arrow keys; j/k jump PREVIEW_SCROLL rows -- or
