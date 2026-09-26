@@ -21,7 +21,7 @@ from textual.containers import Vertical
 from bookshelf_reading import Document
 from textual.message import Message
 from textual.screen import ModalScreen
-from textual.widgets import DirectoryTree, Footer, MarkdownViewer, Static, Tree
+from textual.widgets import DirectoryTree, Footer, Input, MarkdownViewer, Static, Tree
 
 # Rows a j/k press moves the preview. The arrow keys still move one row.
 PREVIEW_SCROLL = 5
@@ -128,6 +128,54 @@ class Confirm(ModalScreen):
 			self.dismiss(None)
 
 
+class NoteInput(Input):
+	"""The line a note is typed on. `ctrl+q` throws it away without clearing it first."""
+
+	BINDINGS = [Binding("ctrl+q", "discard", "discard", show=False)]
+
+	def action_discard(self) -> None:
+		self.screen.dismiss(None)
+
+
+class NotePrompt(ModalScreen):
+	"""Write a note on the line the cursor is on. `Enter` saves it, `Escape` leaves.
+
+	`q` is not the way out here, and cannot be: this is a text field, so the alphabet belongs
+	to the note. A note that begins with "q" is a note somebody will write -- measured, the
+	first attempt came back empty -- and a field where one letter both types and leaves is a
+	field that eats the letter. `Escape` types nothing, `Enter` saves, and `ctrl+q` discards
+	what is already typed without clearing it first.
+	"""
+
+	BINDINGS = [Binding("escape", "discard", "discard", show=False)]
+
+	def __init__(self, text=""):
+		super().__init__()
+		self.text = text
+
+	def compose(self) -> ComposeResult:
+		with Vertical(id="note-box"):
+			yield Static("note on this line", id="note-title")
+			yield NoteInput(value=self.text, id="note-input")
+			# Static parses its content as Rich markup, so the key names are escaped here
+			# Static parses its content as Rich markup, so [enter] would be read as a style tag
+			# and vanish. Escaping the bracket is what makes the key names visible.
+			yield Static(
+				"[enter] save    [esc] leave    [ctrl+q] discard".replace("[", r"\["),
+				id="note-hint",
+			)
+
+	def on_mount(self) -> None:
+		self.query_one(NoteInput).focus()
+
+	def on_input_submitted(self, event: Input.Submitted) -> None:
+		"""Enter: the note, or nothing at all when the line is empty."""
+		self.dismiss(event.value.strip() or None)
+
+	def action_discard(self) -> None:
+		self.dismiss(None)
+
+
 class Preview(ModalScreen):
 	"""A text file rendered inside the TUI. `q` closes it, and nothing else does.
 
@@ -147,6 +195,8 @@ class Preview(ModalScreen):
 		Binding("q", "close_preview", "close"),
 		Binding("m", "mark", "mark"),
 		Binding("a", "select", "select"),
+		Binding("n", "note", "note"),
+		Binding("N", "next_note", "notes", show=False),
 		Binding("h", "cursor_left", "left", show=False),
 		Binding("l", "cursor_right", "right", show=False),
 		Binding("j", "cursor_down", "down", show=False),
@@ -172,6 +222,16 @@ class Preview(ModalScreen):
 			self.anchor = anchor
 			self.position = position
 
+	class NoteSaved(Message):
+		"""A note was written on a line: the app keeps it."""
+
+		def __init__(self, book_id, position, anchor, note):
+			super().__init__()
+			self.book_id = book_id
+			self.position = position
+			self.anchor = anchor
+			self.note = note
+
 	class HighlightRemoved(Message):
 		"""`a` was pressed inside a marked range: forget that one."""
 
@@ -191,19 +251,22 @@ class Preview(ModalScreen):
 			self.span = span
 			self.anchor = anchor
 
-	def __init__(self, heading, body, book_id=None, jump=None, highlights=()):
+	def __init__(self, heading, body, book_id=None, jump=None, highlights=(), notes=()):
 		super().__init__()
 		self.heading = heading
 		self.body = body
 		self.book_id = book_id
 		self.jump = jump                      # a mark to open at: (anchor, position) or None
 		self.stored = list(highlights)        # (position, span, anchor) rows from the database
+		self.stored_notes = list(notes)       # (position, anchor, note) rows
 		self.document = None                  # built once the blocks have been laid out
 		self.selecting = False
 		self.pending_g = False               # `g` waits for its second key
 		self.anchor_offset = 0
 		self.cursor_offset = 0
 		self.highlights = []                  # what to draw: (start, span, anchor)
+		self.notes = []                       # where the notes are: (position, anchor, note)
+		self.note_widget = None               # the one note on screen, if any
 
 	def compose(self) -> ComposeResult:
 		yield Static(self.heading, id="preview-title")
@@ -233,6 +296,7 @@ class Preview(ModalScreen):
 			return
 		self.document = Document(markdown)
 		self.resolve_highlights()
+		self.resolve_notes()
 		if not self.selecting:
 			# The cursor is on from the moment the document opens, at the middle of the view:
 			# a reader has to be able to see where a selection would start before starting one.
@@ -258,6 +322,62 @@ class Preview(ModalScreen):
 			found = self.document.find(anchor)
 			if found >= 0:
 				self.highlights.append((found, span, anchor))
+
+	def resolve_notes(self):
+		"""Put stored notes back on their lines, by the text they were written against."""
+		self.notes = []
+		for position, anchor, note in self.stored_notes:
+			if self.document.text[position:position + len(anchor)] == anchor:
+				self.notes.append((position, anchor, note))
+				continue
+			found = self.document.find(anchor)
+			if found >= 0:
+				self.notes.append((found, anchor, note))
+		self.notes.sort()
+
+	def note_here(self):
+		"""The note on the line the cursor is on, if that line has one."""
+		if self.document is None or not self.notes:
+			return None
+		block = self.document.block_at(self.cursor_offset)
+		if block is None:
+			return None
+		for note in self.notes:
+			if block.start <= note[0] < block.end:
+				return note
+		return None
+
+	def show_note(self):
+		"""One note on screen at a time: the one on the cursor's line, or none.
+
+		The note is a widget of its own, moved above its line rather than text written into the
+		line: writing it in would move every character offset in the model, and the cursor with
+		it.
+
+		There is one such widget for the whole document, created the first time a note is shown
+		and then moved and hidden -- never removed and re-created, because a removal is not
+		finished when the next mount begins and Textual refuses two widgets with one id. While
+		no note is due it is display:none, so it takes no room and no part in the document: the
+		model skips it either way, since it is not a Markdown block.
+		"""
+		markdown = next(iter(self.query("Markdown")), None)
+		if markdown is None:
+			return
+		here = self.note_here()
+		if self.note_widget is None:
+			if here is None:
+				return                     # nothing due, and nothing ever shown
+			self.note_widget = Static("", id="preview-note")
+			markdown.mount(self.note_widget)
+		widget = self.note_widget
+		if here is None:
+			widget.display = False
+			return
+		block = self.document.block_at(here[0])
+		widget.update(f"note · {here[2]}")
+		widget.display = True
+		if block is not None:
+			self.query_one("Markdown").move_child(widget, before=block.widget)
 
 	def paint(self):
 		"""Draw the document with the cursor and the selection it currently has."""
@@ -330,6 +450,34 @@ class Preview(ModalScreen):
 				return (start, span, anchor)
 		return None
 
+	def action_note(self) -> None:
+		"""`n`: write a note on this line, or edit the one already on it."""
+		if self.document is None or not self.document.blocks:
+			return
+		self.pending_g = False
+		existing = self.note_here()
+		self.app.push_screen(NotePrompt(existing[2] if existing else ""), self.note_written)
+
+	def note_written(self, text) -> None:
+		"""The composer closed: a note, or nothing when it was left empty."""
+		if text is None or self.document is None:
+			return
+		block = self.document.block_at(self.cursor_offset)
+		anchor = block.text[:80]
+		self.notes = [note for note in self.notes if not (block.start <= note[0] < block.end)]
+		self.notes.append((block.start, anchor, text))
+		self.notes.sort()
+		self.post_message(self.NoteSaved(self.book_id, block.start, anchor, text))
+		self.show_note()
+
+	def action_next_note(self) -> None:
+		"""`N`: the next line with a note on it, wrapping round at the end of the file."""
+		if self.document is None or not self.notes:
+			self.notify("no notes in this document")
+			return
+		ahead = [position for position, _, _ in self.notes if position > self.cursor_offset]
+		self.move_cursor(ahead[0] if ahead else self.notes[0][0])
+
 	def action_select(self) -> None:
 		"""`a`: mark a range, or take the mark away.
 
@@ -370,6 +518,7 @@ class Preview(ModalScreen):
 		self.cursor_offset = offset
 		self.follow_cursor()
 		self.paint()
+		self.show_note()
 
 	def follow_cursor(self) -> None:
 		"""Scroll the least that keeps the cursor visible, rather than centring it.
@@ -469,6 +618,7 @@ class Preview(ModalScreen):
 		self.pending_g = False
 		self.query_one(MarkdownViewer).scroll_relative(y=rows, animate=False)
 		self.clamp_cursor()
+		self.show_note()
 
 	def action_scroll_half_down(self) -> None:
 		"""`ctrl-d`: half a page of text, the cursor only if it would be left behind."""

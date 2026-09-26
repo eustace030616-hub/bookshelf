@@ -373,6 +373,7 @@ class BookshelfApp(App):
 			# once. Reading it here and passing it down keeps the database in the app.
 			mark = repo.take_mark(conn, row["id"])
 			highlights = repo.highlights_for(conn, row["id"])
+			notes = repo.notes_for(conn, row["id"])
 		if body is None:
 			return
 		if row["kind"] == "html":
@@ -384,7 +385,8 @@ class BookshelfApp(App):
 			body = fenced(body, LANGUAGES.get(row["kind"], row["kind"]))
 		self.push_screen(
 			Preview(f"{row['root_label']} / {row['path']}", body, book_id=row["id"],
-					jump=tuple(mark) if mark else None, highlights=highlights)
+					jump=tuple(mark) if mark else None, highlights=highlights,
+					notes=notes)
 		)
 		if mark:
 			self.notify("opened at your mark -- it has now expired")
@@ -401,6 +403,12 @@ class BookshelfApp(App):
 		with db.session(self.db_path) as conn:
 			repo.add_highlight(conn, message.book_id, message.position, message.span, message.anchor)
 		self.notify(f"marked {len(message.anchor)} character(s)")
+
+	def on_preview_note_saved(self, message: Preview.NoteSaved) -> None:
+		"""The reader wrote on a line: keep the note against that line's text."""
+		with db.session(self.db_path) as conn:
+			repo.set_note(conn, message.book_id, message.position, message.anchor, message.note)
+		self.notify(f"note: {message.note[:40]}")
 
 	def on_preview_highlight_removed(self, message: Preview.HighlightRemoved) -> None:
 		"""The reader pressed `a` inside a marked range: that range goes."""

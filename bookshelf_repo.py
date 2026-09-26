@@ -264,6 +264,35 @@ def add_highlight(conn, book_id, position, span, anchor):
 	)
 
 
+def set_note(conn, book_id, position, anchor, note):
+	"""Write a note on one line, replacing whatever was on that line.
+
+	One note per line, for the same reason there is one mark per document: a reader writing on
+	a line is saying something about that line, not adding to a pile.
+	"""
+	conn.execute(
+		"DELETE FROM annotation WHERE book_id = ? AND kind = 'note' AND position = ?",
+		(book_id, position),
+	)
+	conn.execute(
+		"INSERT INTO annotation (book_id, kind, anchor, position, note) "
+		"VALUES (?, 'note', ?, ?, ?)",
+		(book_id, anchor, position, note),
+	)
+
+
+def notes_for(conn, book_id):
+	"""Every note on one document, in reading order: (position, anchor, note)."""
+	return [
+		(row["position"], row["anchor"], row["note"])
+		for row in conn.execute(
+			"SELECT position, anchor, note FROM annotation "
+			"WHERE book_id = ? AND kind = 'note' ORDER BY position",
+			(book_id,),
+		)
+	]
+
+
 def remove_highlight(conn, book_id, position, span):
 	"""Forget one marked range. Returns True if a row went.
 

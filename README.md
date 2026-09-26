@@ -45,7 +45,7 @@ unmount -- so one line of hint names every key that works.
 
 The preview answers to its own keys: `j`/`k`, `h`/`l`, `w`/`b`, `gg`/`G` and `ctrl-g`
 move the cursor, `ctrl-d`/`ctrl-u` and `ctrl-f`/`ctrl-b` move the view, `m` marks a place,
-`a` marks a range, `q` closes. `m` there
+`a` marks a range, `n` writes a note and `N` finds them, `q` closes. `m` there
 is a mark, not a mount -- below the list, a key means what the screen needs it to mean.
 
 ## Modes
@@ -200,6 +200,16 @@ screen.
 `a` marks everything between the two ends. Pressing `a` with the cursor inside a mark you
 already made takes that mark away. `q` drops a selection you have changed your mind about, and
 only closes the document when there is none.
+
+`n` writes a note on the line the cursor is on. The note is invisible until the cursor is on
+that line, and then it appears above it as a strip; move the cursor away and it is gone. There
+is one note per line -- `n` on a noted line edits it -- and `N` jumps to the next line that has
+one, wrapping round at the end of the file, which is how you find notes you wrote months ago.
+
+The composer saves with `Enter` and leaves with `Escape` (or `ctrl-q`, which discards what you
+have typed). `Enter` on an empty line leaves nothing behind. It is not a `q` to leave, because
+it is a text field: a note that begins with "q" is a note somebody will write, and a letter
+that both types and leaves is a letter the field eats.
 
 The range is stored with the text it covers, so it comes back on the same sentence after the
 file is re-read; a range whose words are gone is dropped rather than drawn in the wrong place.
