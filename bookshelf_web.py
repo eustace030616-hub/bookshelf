@@ -52,7 +52,9 @@ a { color:var(--brand); text-decoration:none; } a:hover { text-decoration:underl
 header { position:sticky; top:0; z-index:10; background:var(--paper);
          border-bottom:1px solid var(--panel); margin-bottom:1rem; padding:.5rem 0; }
 header::after { content:""; display:block; clear:both; }
-nav a { margin-right:.9rem; font-weight:600; } nav a[aria-current] { text-decoration:underline; }
+nav { display:flex; align-items:center; gap:.8rem; }
+nav a { font-weight:600; } nav a[aria-current] { text-decoration:underline; }
+nav .right { margin-left:auto; font-weight:400; font-size:.9rem; }
 ul.tree { list-style:none; padding-left:.2rem; } ul.tree ul { padding-left:1.1rem; }
 li.folder > span { color:var(--brand); font-weight:600; }
 li.file { margin:.15rem 0; }
@@ -74,7 +76,7 @@ pre.code { border:1px solid var(--panel); }
 .nf, .nc { color:var(--ink); font-weight:600; }
 @media (max-width: 44rem) {
   body { padding:0 1.4rem 3.5rem; font-size:17px; }
-  nav input[type=search] { width:6.5rem; }
+  nav { gap:.5rem; }
   table { display:block; overflow-x:auto; }
   h1 { font-size:1.35rem; }
 }
@@ -83,36 +85,41 @@ blockquote { margin:0; padding-left:.9rem; border-left:3px solid var(--brand); c
    words they highlighted, and a note set above the block it was written on */
 mark.mark { background:#F0E2B8; color:inherit; padding:0 .08em; border-radius:2px; }
 .note { background:var(--panel); border-left:3px solid var(--brand); border-radius:4px;
-        padding:.45rem .7rem; margin:.6rem 0; white-space:pre-wrap; font-size:.95rem;
-        scroll-margin-top:3.5rem; }
+        padding:.45rem .7rem; margin:.6rem 0; white-space:pre-wrap; font-size:.95rem; }
 .note-label { display:block; font-size:.72rem; letter-spacing:.08em; text-transform:uppercase;
               color:var(--brand); font-weight:700; }
-/* find-on-page, in the nav beside `note`. Its hits are a cool wash so they never read as the
-   reader's own warm highlights, and the current hit is the darker of the two. */
-nav input[type=search] { width:9rem; font:inherit; font-size:.9rem; padding:.05rem .4rem;
-                         color:var(--ink); background:var(--paper);
-                         border:1px solid var(--panel); border-radius:4px; }
-.hit { background:#DCE6F0; color:inherit; border-radius:2px; }
-.hit-current { background:#A9C9DE; }
 footer { margin-top:2rem; color:#6b6a64; font-size:.85rem; }
+/* the floating control panel: note and shelf in one rounded square, fixed so a thumb reaches
+   it, draggable so it never has to sit on top of the words, and narrower when there is no
+   note to step to */
+#panel { position:fixed; right:1rem; bottom:1rem; z-index:20; width:max-content;
+         max-width:calc(100vw - 2rem); display:flex; flex-direction:column; gap:.35rem;
+         padding:.75rem .55rem .5rem; background:var(--panel); border-radius:16pt;
+         box-shadow:0 2px 10px rgba(0,0,0,.16); touch-action:none; }
+#panel .grip { align-self:stretch; height:1.15rem; display:flex; align-items:center;
+               justify-content:center; cursor:move; touch-action:none; }
+#panel .grip::before { content:""; width:2.2rem; height:.3rem; border-radius:999px;
+                       background:var(--stone); opacity:.6; }
+/* the note button and the shelf dropdown are the same control in two jobs, so they wear the
+   same box: one width, one border, one radius, one type size */
+#panel select { box-sizing:border-box; width:5.5rem; font:inherit; font-size:.9rem;
+                padding:.2rem .3rem; color:var(--ink); background:var(--paper);
+                border:1px solid var(--border); border-radius:6pt; }
 #changed { position:sticky; bottom:0; margin-top:1rem; text-align:center; }
 #changed a { display:inline-block; padding:.45rem .9rem; border-radius:999px; font-size:.9rem;
             background:var(--brand); color:var(--paper); text-decoration:none; }
-nav a[title] { float:right; margin-right:0; font-weight:400; font-size:.9rem; }
 .meta { color:#6b6a64; font-size:.85rem; }
 @media (prefers-color-scheme: dark) {
   :root { --ink:#e6e1d6; --paper:#191813; --panel:#242219; --brand:#d3ab52; }
   blockquote { color:#b9b3a5; } .meta, footer { color:#9a9488; }
   mark.mark { background:#5c4d22; }
-  .hit { background:#33506a; } .hit-current { background:#4c7195; }
 }
 """
 
 PAGE = """<!DOCTYPE html>
 <html lang="en"><head><meta charset="utf-8">{viewport}<title>{title}</title>
 <style>{style}</style></head>
-<body><header><nav>{nav}{reload_link}</nav></header>
-<main>{body}</main>
+<body>{header}<main>{body}</main>{panel}
 <div id="changed" hidden><a href="{reload_href}">the shelf changed &middot; reload</a></div>
 <footer>{footer}</footer>{watcher}</body></html>
 """
@@ -135,17 +142,26 @@ WATCHER = """<script>
 </script>"""
 
 
-def page(title, body, nav, footer="", stamp=None, watch_url="/health", reload_href="", every=10):
-	"""One page. Given a stamp, the page also watches the server for a newer one."""
+def page(title, body, nav, footer="", stamp=None, watch_url="/health", reload_href="", every=10,
+         reload=True, header=True, panel=""):
+	"""One page. Given a stamp, the page also watches the server for a newer one.
+
+	`header` is the sticky nav bar: the shelf page has one, a document page does not -- it
+	carries a floating panel instead, so a thumb does not have to reach the top of the screen.
+	`reload` is the header's button, not the changed-bar.
+	"""
 	watcher = ""
 	if stamp is not None:
 		watcher = WATCHER % {"stamp": json.dumps(stamp), "url": json.dumps(watch_url), "every": every * 1000}
+	reload_link = (f'<a class="right" href="{reload_href or "/"}" title="pull the database again">reload</a>'
+				   if reload else "")
+	header_html = f"<header><nav>{nav}{reload_link}</nav></header>" if header else ""
 	return PAGE.format(
 		viewport=VIEWPORT,
 		title=html.escape(title),
 		style=STYLE.replace("{star_on}", ON_COLOUR).replace("{star_off}", OFF_COLOUR),
-		nav=nav,
-		reload_link=f'<a href="{reload_href or "/"}" title="pull the database again">reload</a>',
+		header=header_html,
+		panel=panel,
 		reload_href=reload_href or "/",
 		body=body,
 		footer=footer,
@@ -163,116 +179,154 @@ def nav(mode, counts=None):
 	return "".join(parts)
 
 
-# The document page's own navigation. The book/code buttons belong to the shelf, not here: a
-# document is already one mode's row, and the mode is the shelf's choice. What a document has
-# to move around is its own notes -- a click steps to the next one in reading order, wrapping
-# -- and the script hooks that onto the button. Without the script the button is still a plain
-# link to the first note, because every callout carries the id the anchor points at.
+def notes_nav(count):
+	"""The note control for a document page, or nothing when the page has no notes.
+
+	A dropdown, like the shelf: the script fills it from the rendered callouts, so a reader
+	picks the note they want instead of stepping through the ones they do not.
+	"""
+	if not count:
+		return ""
+	return ('<select id="note-list" aria-label="jump to a note">'
+	        '<option value="">note</option></select>')
+
+
+def shelf_picker(conn):
+	"""The whole shelf as one dropdown, grouped by mode: the tree, folded for a phone.
+
+	A phone has no room for the tree and no keyboard for a path, so this is one control that
+	jumps anywhere -- a chapter, or `.py` down in code mode -- and gives the mark button a way
+	back. The leading `shelf` option is selected so the control reads as a button, not as the
+	name of the document it is already on.
+	"""
+	rows = repo.list_books(conn)
+	groups = {name: [] for name in MODES}
+	for row in rows:
+		mode = MODES["code"] if row["kind"] in MODES["code"].kinds.values() else MODES["book"]
+		groups[mode.name].append(row)
+	parts = ['<select id="shelf" aria-label="open another document">',
+	         '<option value="" selected>shelf</option>']
+	for name, mode in MODES.items():
+		if not groups[name]:
+			continue
+		parts.append(f'<optgroup label="{html.escape(mode.plural.title())}">')
+		for row in sorted(groups[name], key=lambda r: row_name(r, mode).casefold()):
+			parts.append(f'<option value="/doc/{row["id"]}">{html.escape(row_name(row, mode))}</option>')
+		parts.append("</optgroup>")
+	parts.append("</select>")
+	return "".join(parts)
+
+
+# Fill the note dropdown from the callouts that the server actually placed, not from the rows
+# it read: an anchor whose words are gone is dropped, and the list must match the page. The
+# option label is the note's own words, so the picker says what each one is about.
 NOTE_SCRIPT = """<script>
 (function () {
   var notes = document.querySelectorAll(".note");
-  var button = document.getElementById("note-next");
-  if (!button || !notes.length) { return; }
-  var at = -1, plain = button.textContent;
-  function label() { button.textContent = plain + " " + (at + 1) + "/" + notes.length; }
-  button.addEventListener("click", function (event) {
-    event.preventDefault();
-    at = (at + 1) % notes.length;
-    notes[at].scrollIntoView({behavior: "smooth", block: "center"});
-    label();
+  var box = document.getElementById("note-list");
+  if (!box || !notes.length) { return; }
+  for (var i = 0; i < notes.length; i++) {
+    var label = (notes[i].textContent || "").replace(/\\s+/g, " ").trim().replace(/^note\\s*/i, "");
+    var option = document.createElement("option");
+    option.value = String(i);
+    option.textContent = label.slice(0, 48) || ("note " + (i + 1));
+    box.appendChild(option);
+  }
+  box.addEventListener("change", function () {
+    var at = parseInt(box.value, 10);
+    if (!isNaN(at) && notes[at]) {
+      notes[at].scrollIntoView({behavior: "smooth", block: "start"});
+    }
+    box.value = "";
   });
-  button.textContent = plain + " " + notes.length;
+})();
+</script>"""
+# The shelf dropdown navigates on change; nothing else to it.
+SHELF_SCRIPT = """<script>
+(function () {
+  var box = document.getElementById("shelf");
+  if (!box) { return; }
+  box.addEventListener("change", function () {
+    if (box.value) { window.location.href = box.value; }
+  });
 })();
 </script>"""
 
 
-def notes_nav(count):
-	"""The note button for a document page, or nothing when the page has no notes."""
-	if not count:
-		return ""
-	return '<a href="#note-1" id="note-next" aria-label="jump to the next note">note</a>'
-
-
-# Find on the page, beside the note button. Client-side, because the page is already here: no
-# route, no index, and it works on a document the server rendered from an anchor it could only
-# guess at. It wraps its hits in its own span, so the server's <mark> highlights survive it.
-FIND_BOX = ('<input id="find" type="search" placeholder="find" aria-label="find on this page" '
-            'autocomplete="off" spellcheck="false">')
-
-FIND_SCRIPT = """<script>
+# Drag the panel: the grip is the obvious place at the bottom, but the padding and the gaps
+# drag too, so a thumb does not need to find the bar. A pointerdown on a control is left alone,
+# so a tap still opens the shelf list. `touch-action: none` on the panel is what lets a drag
+# beat the scroll. On release the panel is magnetic: it snaps to the nearest edge on each axis,
+# and the corner it lands in is remembered for the next page.
+PANEL_SCRIPT = """<script>
 (function () {
-  var box = document.getElementById("find");
-  var main = document.querySelector("main");
-  if (!box || !main) { return; }
-  var hits = [], at = -1;
-  function clear() {
-    var wrapped = main.querySelectorAll("span.hit");
-    for (var i = 0; i < wrapped.length; i++) {
-      wrapped[i].replaceWith(document.createTextNode(wrapped[i].textContent));
-    }
-    main.normalize();
-    hits = []; at = -1;
+  var panel = document.getElementById("panel");
+  if (!panel) { return; }
+  var KEY = "bookshelf.panel", EDGE = 8;
+  var dragging = false, startX = 0, startY = 0, originX = 0, originY = 0;
+
+  function limit(x, y) {
+    return [Math.max(EDGE, Math.min(window.innerWidth - panel.offsetWidth - EDGE, x)),
+            Math.max(EDGE, Math.min(window.innerHeight - panel.offsetHeight - EDGE, y))];
   }
-  function textNodes() {
-    var walker = document.createTreeWalker(main, NodeFilter.SHOW_TEXT, {
-      acceptNode: function (node) {
-        if (!node.nodeValue || !node.nodeValue.trim()) { return NodeFilter.FILTER_REJECT; }
-        for (var p = node.parentNode; p && p !== main; p = p.parentNode) {
-          if (p.nodeName === "SCRIPT" || p.nodeName === "STYLE") { return NodeFilter.FILTER_REJECT; }
-        }
-        return NodeFilter.FILTER_ACCEPT;
-      }
-    });
-    var out = [], node;
-    while ((node = walker.nextNode())) { out.push(node); }
-    return out;
+  function place(x, y) {
+    panel.style.right = "auto"; panel.style.bottom = "auto";
+    panel.style.left = x + "px"; panel.style.top = y + "px";
   }
-  function mark(query) {
-    clear();
-    var needle = query.toLowerCase();
-    if (!needle) { return; }
-    var list = textNodes();
-    for (var i = 0; i < list.length; i++) {
-      var node = list[i], text = node.nodeValue, lower = text.toLowerCase();
-      if (lower.indexOf(needle) === -1) { continue; }
-      var frag = document.createDocumentFragment(), last = 0, found;
-      while ((found = lower.indexOf(needle, last)) !== -1) {
-        frag.appendChild(document.createTextNode(text.slice(last, found)));
-        var span = document.createElement("span");
-        span.className = "hit";
-        span.textContent = text.slice(found, found + needle.length);
-        frag.appendChild(span);
-        hits.push(span);
-        last = found + needle.length;
-      }
-      frag.appendChild(document.createTextNode(text.slice(last)));
-      node.parentNode.replaceChild(frag, node);
-    }
+  function saved() {
+    try { return JSON.parse(localStorage.getItem(KEY) || "null"); } catch (e) { return null; }
   }
-  function show() {
-    for (var i = 0; i < hits.length; i++) { hits[i].classList.remove("hit-current"); }
-    if (hits.length && hits[at]) {
-      hits[at].classList.add("hit-current");
-      hits[at].scrollIntoView({behavior: "smooth", block: "center"});
-      box.placeholder = (at + 1) + "/" + hits.length;
-    } else {
-      box.placeholder = "find";
-    }
-  }
-  function step(delta) {
-    if (!hits.length) { return; }
-    at = (at + delta + hits.length) % hits.length;
-    show();
-  }
-  box.addEventListener("input", function () {
-    mark(box.value);
-    at = hits.length ? 0 : -1;
-    show();
+
+  window.addEventListener("load", function () {
+    var spot = saved();
+    if (!spot) { return; }
+    var point = limit(spot.left, spot.top);
+    place(point[0], point[1]);
   });
-  box.addEventListener("keydown", function (event) {
-    if (event.key === "Enter") { event.preventDefault(); step(event.shiftKey ? -1 : 1); }
-    if (event.key === "Escape") { box.value = ""; clear(); box.placeholder = "find"; }
+
+  panel.addEventListener("pointerdown", function (event) {
+    if (event.target.closest("select, a, button, input, label")) { return; }
+    dragging = true;
+    panel.style.transition = "";
+    try { panel.setPointerCapture(event.pointerId); } catch (e) {}
+    startX = event.clientX; startY = event.clientY;
+    var box = panel.getBoundingClientRect();
+    originX = box.left; originY = box.top;
+    place(originX, originY);
+    event.preventDefault();
   });
+
+  panel.addEventListener("pointermove", function (event) {
+    if (!dragging) { return; }
+    var point = limit(originX + event.clientX - startX, originY + event.clientY - startY);
+    place(point[0], point[1]);
+  });
+
+  function stop() {
+    if (!dragging) { return; }
+    dragging = false;
+    var box = panel.getBoundingClientRect();
+    // magnetic, to the nearest edge and no further: the axis of the nearest border moves, the
+    // other one keeps whatever the finger left, so the panel does not jump into a corner
+    var near = [
+      ["left", box.left],
+      ["right", window.innerWidth - box.right],
+      ["top", box.top],
+      ["bottom", window.innerHeight - box.bottom]
+    ].sort(function (a, b) { return a[1] - b[1]; })[0][0];
+    var x = box.left, y = box.top;
+    if (near === "left") { x = EDGE; }
+    else if (near === "right") { x = window.innerWidth - box.width - EDGE; }
+    else if (near === "top") { y = EDGE; }
+    else { y = window.innerHeight - box.height - EDGE; }
+    var point = limit(x, y);
+    panel.style.transition = "left .18s ease, top .18s ease";
+    place(point[0], point[1]);
+    try { localStorage.setItem(KEY, JSON.stringify({left: point[0], top: point[1]})); } catch (e) {}
+    setTimeout(function () { panel.style.transition = ""; }, 240);
+  }
+  panel.addEventListener("pointerup", stop);
+  panel.addEventListener("pointercancel", stop);
 })();
 </script>"""
 
@@ -536,11 +590,20 @@ class Handler(BaseHTTPRequestHandler):
 		# The mode buttons stay on the shelf; a document navigates its own notes instead, and
 		# keeps the reload every page has.
 		placed = rendered.count('<aside class="note"')
-		body = back + rendered + (NOTE_SCRIPT if placed else "") + FIND_SCRIPT
-		self.send(200, page(title, body, notes_nav(placed) + FIND_BOX, row["path"],
+		body = back + rendered
+		# The controls live in a floating panel at the thumb, not in a bar at the top: the note
+		# button when there is a note to step to, and the shelf dropdown always. It is draggable
+		# so it can be moved off whatever it covers, and it is narrower without the note. The
+		# scripts come after the panel, not with the body: a script inside `<main>` runs before
+		# the panel is parsed and would find no button and no select to attach to.
+		panel = ('<div id="panel">'
+				 + notes_nav(placed) + shelf_picker(conn)
+				 + '<span class="grip" aria-hidden="true"></span></div>'
+				 + (NOTE_SCRIPT if placed else "") + SHELF_SCRIPT + PANEL_SCRIPT)
+		self.send(200, page(title, body, "", row["path"],
 							stamp=document_stamp(conn, row["id"]),
 							watch_url=f"/stamp/{row['id']}",
-							reload_href=f"/doc/{row['id']}"))
+							reload_href=f"/doc/{row['id']}", reload=False, header=False, panel=panel))
 
 	def raw(self, conn, path):
 		row = self.row(conn, path, "raw")

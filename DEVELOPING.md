@@ -5,14 +5,14 @@ How the shelf is built, and why. What it does, and which key does what, is in
 
 ## Layout
 
-Twenty files and 3,911 lines. Two views of one data layer -- the terminal app and the
+Twenty files and 3,974 lines. Two views of one data layer -- the terminal app and the
 web front end -- and nothing below them knows either exists.
 
 ```
 bookshelf_tui.py         the app: modes, reload, keys          542
         │
         ├── bookshelf_screens.py     the dialogs and the trees            1134
-        ├── bookshelf_web.py         the shelf over HTTP, GET only         628
+        ├── bookshelf_web.py         the shelf over HTTP, GET only         691
         ├── bookshelf_annotate.py    a reader's marks put back into        221
         │                            the served HTML
         ├── bookshelf_reading.py     the document as a model, and the      378
@@ -262,10 +262,19 @@ than in production.
 │ no path traversal is not a policy here, it is the absence of a feature
 │ one rendering   Markdown and code are wrapped in this server's own page, using the app's
 │             palette. There is no second page type: the shelf holds no HTML of its own
-│ the page has one nav row   `note`, `find` and `reload` share a sticky header, so the note a
-│             reader jumped to does not cost them the button that took them there. `find` is a
-│             client-side pass over the text nodes of `<main>`, wrapped in its own span so the
-│             server's `<mark>` highlights survive it
+│ the document's controls float   `note` and `shelf` are two dropdowns in a rounded panel fixed
+│             at the bottom of a document, not in the header: a thumb reaches it without a trip
+│             to the top, and it is draggable so it can be moved off the words. Released, it is
+│             magnetic to the nearest edge alone -- the one axis moves, the other stays where the
+│             finger left it -- and that edge is remembered for the next page. `note` is filled
+│             by script from the callouts the server actually placed, not from the rows it read,
+│             because an anchor whose words are gone is dropped; `shelf` is the whole tree in one
+│             dropdown, and the browser's own back button is the way back from it. The panel is
+│             just the shelf when the page has no note. Its script and the note and shelf ones
+│             are emitted after the panel: a script inside `<main>` runs before the panel is
+│             parsed and finds no control to attach to, which is exactly the bug that made the
+│             note dropdown inert. The shelf page keeps the header, with the mode switch and
+│             `reload`
 │ the image installs two libraries   `markdown-it-py`, which is the renderer the terminal
 │             app already uses through Textual, and `pygments` for code. Same engine, same
 │             output: a document now reads the same on the phone and in the terminal

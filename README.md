@@ -293,9 +293,12 @@ server has no write route at all.
 The page carries the reader's own marks: a highlight is a wash behind the words it covered, and
 a note is a callout above the block it was written on. Neither is written from the browser --
 the rows are read and drawn, which is the whole point of the read-only server. A document's own
-navigation is a `note` button that steps through its notes, a `find` box that highlights on the
-page and steps with Enter, and the `reload` every page keeps; the book/code switch lives on the
-shelf, because a document is already one mode's row.
+A document's own controls -- a `note` menu of its notes and a `shelf` dropdown of the whole
+shelf -- sit in a rounded panel fixed at the bottom of the screen, so a thumb reaches them
+without a trip to the top, and draggable so they can be moved off whatever they cover; released,
+it snaps to the nearest edge and keeps that edge. Without a note the panel is just the shelf
+dropdown. The browser's back button is the way back, and `reload` and the book/code switch stay
+on the shelf page, which keeps its header.
 
 | | Terminal (this machine) | Browser (anywhere) |
 |---|---|---|
